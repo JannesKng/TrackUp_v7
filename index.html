@@ -10635,7 +10635,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
     <!-- Footer -->
     <footer id="appFooter" class="app-footer">
-      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.2.1</span></span>
+      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.2.2</span></span>
       <nav style="display:flex; gap:14px;">
         <a href="impressum.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Impressum</a>
         <a href="datenschutz.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Datenschutz</a>
@@ -23368,8 +23368,9 @@ async function renderWettkampfDetail() {
   const _googleAusschreibungUrl = (() => {
     if (!wk.bezeichnung) return '';
     const jahr = wk.startdatum ? new Date(wk.startdatum).getFullYear() : '';
-    const q = encodeURIComponent((wk.bezeichnung + ' ' + jahr + ' Leichtathletik Ausschreibung').trim());
-    return 'https://www.google.com/search?q=' + q + '&btnI=1';
+    const ortTeil = (wk.ort_display || wk.ort) ? (' ' + (wk.ort_display || wk.ort)) : '';
+    const q = encodeURIComponent((wk.bezeichnung + ortTeil + ' ' + jahr + ' Leichtathletik Ausschreibung').trim());
+    return 'https://www.google.com/search?q=' + q + '+ladv&btnI=1';
   })();
   infoEl.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
