@@ -11229,7 +11229,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
     <!-- Footer -->
     <footer id="appFooter" class="app-footer">
-      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.3.0</span></span>
+      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.3.1</span></span>
       <nav style="display:flex; gap:14px;">
         <a href="impressum.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Impressum</a>
         <a href="datenschutz.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Datenschutz</a>
@@ -15059,6 +15059,15 @@ async function initializeApp() {
   }
   
   console.log('=== APP INIT COMPLETE ===');
+
+  // Wenn der Analyse-Tab gerade aktiv ist: Diagramme der aktiven Section automatisch aktualisieren
+  const analyseTabEl = document.getElementById('analyseTab');
+  if (analyseTabEl && analyseTabEl.classList.contains('active')) {
+    const activeSection = document.querySelector('.analyse-nav-item.active');
+    const activeSectionName = activeSection ? activeSection.dataset.section : 'entwicklungen';
+    // Kurzes Timeout damit DOM-Updates abgeschlossen sind
+    setTimeout(() => switchAnalyseSection(activeSectionName), 50);
+  }
 }
 
 
@@ -21328,7 +21337,14 @@ function switchAnalyseSection(section) {
   const activeSection = document.getElementById(`analyseSection-${section}`);
   if (activeSection) activeSection.style.display = 'block';
   // Diagramm automatisch laden
-  if (section === 'entwicklungen') zeigeDiagramm();
+  if (section === 'entwicklungen') {
+    // Wenn keine Disziplin gewählt, erste verfügbare automatisch auswählen
+    const entSel = document.getElementById('analyseDisziplin');
+    if (entSel && !entSel.value && entSel.options.length > 1) {
+      entSel.value = entSel.options[1].value; // Index 0 = Platzhalter "– alle –"
+    }
+    zeigeDiagramm();
+  }
   if (section === 'sb') {
     // Wenn keine Disziplin gewählt, erste verfügbare automatisch auswählen
     const sbSel = document.getElementById('sbDisziplin');
@@ -26229,4 +26245,3 @@ th:hover .sort-indicator {
 </script>
 </body>
 </html>
-                                                                                                                                                                                                                                                                                                                                                                                                                             
