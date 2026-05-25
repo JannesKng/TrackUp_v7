@@ -1,6 +1,6 @@
-<!-- Letzte Änderung: 2026-05-16 -->
+<!-- Letzte Änderung: 2026-05-18 -->
 <!DOCTYPE html>
-<!-- Letzte Änderung: 2026-05-16 -->
+<!-- Letzte Änderung: 2026-05-18 -->
 <html lang="de">
 <head>
 	<!-- Google tag (gtag.js) -->
@@ -26,7 +26,7 @@
   <meta property="og:type" content="website">
   
   <!-- PWA Support -->
-  <meta name="theme-color" content="#764ba2">
+  <meta name="theme-color" content="#1e3a8a">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -101,11 +101,15 @@ function openDetailPopup(leistungData) {
   const header = popup.querySelector('.detail-popup-header');
   if (header) {
     const platz = leistungData.platzierung;
-    let gradStart = '#ffffff';
-    if (platz === 1)      gradStart = '#FFD700'; // Gold
-    else if (platz === 2) gradStart = '#C8C8C8'; // Silber
-    else if (platz === 3) gradStart = '#CD7F32'; // Bronze
-    header.style.background = `linear-gradient(135deg, ${gradStart} 0%, #ffffff 100%)`;
+    if (platz === 1) {
+      header.style.background = 'linear-gradient(135deg, #FFD700 0%, #1e3a8a 100%)';
+    } else if (platz === 2) {
+      header.style.background = 'linear-gradient(135deg, #C8C8C8 0%, #1e3a8a 100%)';
+    } else if (platz === 3) {
+      header.style.background = 'linear-gradient(135deg, #CD7F32 0%, #1e3a8a 100%)';
+    } else {
+      header.style.background = '#1e3a8a';
+    }
   }
   
   // Edit-Button: nur anzeigen wenn eigene Leistung
@@ -1811,7 +1815,7 @@ document.addEventListener('keydown', function(e) {
       /* Background Colors */
       --bg-gradient-start: #f2f6fa;
       --bg-gradient-end: #f2f6fa;
-      --container-bg: #ffffff;
+      --container-bg: #f2f6fa;
       
       /* Text Colors */
       --text-primary: #1a1a1a;
@@ -1819,8 +1823,8 @@ document.addEventListener('keydown', function(e) {
       --text-muted: #6c757d;
       
       /* Header */
-      --header-bg-start: #ffffff;
-      --header-bg-end: #ffffff;
+      --header-bg-start: #1e3a8a;
+      --header-bg-end: #1e3a8a;
       
       /* UI Elements */
       --section-bg: #f8f9fa;
@@ -1846,7 +1850,7 @@ document.addEventListener('keydown', function(e) {
       --btn-danger-bg: #dc3545;
       
       /* Toolbar / Chip / Dropdown */
-      --toolbar-btn-bg: #ffffff;
+      --toolbar-btn-bg: #f2f6fa;
       --toolbar-btn-border: #e2e8f0;
       --toolbar-btn-color: #374151;
       --toolbar-btn-hover: #f1f5f9;
@@ -1996,20 +2000,14 @@ body.dark-mode {
 
 /* ── body ── */
 body.dark-mode {
-  /* Subtiler vertikaler Gradient: von tiefem Base nach leicht aufgehelltem Surface.
-     Erzeugt Tiefe ohne harte Kanten oder blendendes Schwarz. */
-  background:
-    radial-gradient(
-      ellipse 80% 50% at 50% -10%,
-      rgba(99, 120, 255, 0.055) 0%,
-      transparent 70%
-    ),
-    linear-gradient(
-      175deg,
-      #0d1117 0%,
-      #111722 40%,
-      #161b22 100%
-    );
+  /* Gleicher Navy-Blau-Gradient wie Light Mode, aber ~25% dunkler –
+     selber Charakter, klar erkennbarer Unterschied zum Standard. */
+  background: linear-gradient(
+    to bottom,
+    #090f1a 0%,
+    #112040 50%,
+    #1a3460 100%
+  );
   background-attachment: fixed;
   color: var(--text-primary);
   transition: background 0.35s ease, color 0.25s ease;
@@ -2950,6 +2948,94 @@ body.dark-mode .analyse-pf-input {
 body.dark-mode .analyse-pf-label { color: var(--text-secondary) !important; }
 
 /* ══════════════════════════════════════════════════════════════
+   DARK MODE — ANALYSE-CONTENT & KACHELN
+   Alle harten #f2f6fa / #ffffff Hintergründe in Karten/Panels
+   ══════════════════════════════════════════════════════════════ */
+
+/* Analyse-Content-Box */
+body.dark-mode .analyse-content {
+  background: var(--bg-surface, #161b22) !important;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.45) !important;
+}
+
+/* SB-Inline-Jahr-Selektor-Wrap (inline background:#f2f6fa) */
+body.dark-mode #sbInlineJahrWrap {
+  background: var(--bg-card, #1c2230) !important;
+  border-color: var(--border-subtle) !important;
+}
+body.dark-mode #sbInlineJahrWrap label {
+  color: var(--accent-secondary, #93c5fd) !important;
+}
+body.dark-mode #sbJahrInline {
+  background: var(--bg-elevated, #242e42) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-strong) !important;
+}
+
+/* SB-Diagramm-Container (inline background:#f2f6fa) */
+body.dark-mode #sbDiagrammContainer {
+  background: var(--bg-card, #1c2230) !important;
+}
+body.dark-mode #sbDiagrammContainer h4 {
+  color: var(--accent-secondary, #93c5fd) !important;
+}
+
+/* SB-Diagramm-Options-Container (inline background:#fff) */
+body.dark-mode #sbDiagrammOptionsContainer {
+  background: var(--bg-elevated, #242e42) !important;
+  border: 1px solid var(--border-subtle) !important;
+}
+body.dark-mode #sbDiagrammOptionsContainer strong {
+  color: var(--accent-secondary, #93c5fd) !important;
+}
+body.dark-mode #sbDiagrammOptionsContainer label {
+  color: var(--text-secondary) !important;
+}
+
+/* Wettkampf-Detail-Info-Box (inline background:#f2f6fa) */
+body.dark-mode #wkDetailInfo {
+  background: var(--bg-card, #1c2230) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+/* PB/SB-Tabellen-Ausgabe-Container */
+body.dark-mode #bestleistungenAusgabe table {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+body.dark-mode #bestleistungenAusgabe th {
+  background: var(--bg-elevated) !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border-subtle) !important;
+}
+body.dark-mode #bestleistungenAusgabe td {
+  border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+}
+body.dark-mode #bestleistungenAusgabe tr:hover td {
+  background: var(--bg-elevated) !important;
+}
+
+/* Leistungen-Tabelle (dynamisch generiert mit background:white) */
+body.dark-mode #leistungenTabelle table,
+body.dark-mode #leistungenTabelle thead,
+body.dark-mode #leistungenTabelle tbody {
+  background: var(--bg-card) !important;
+}
+body.dark-mode #leistungenTabelle th {
+  background: var(--bg-elevated) !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border-subtle) !important;
+}
+body.dark-mode #leistungenTabelle td {
+  color: var(--text-primary) !important;
+  border-color: var(--border-subtle) !important;
+}
+body.dark-mode #leistungenTabelle tr:hover td {
+  background: var(--bg-elevated) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
    DARK MODE — KALENDER
    ══════════════════════════════════════════════════════════════ */
 body.dark-mode #kalenderTab .kal-wrap {
@@ -3111,7 +3197,7 @@ body.dark-mode #sbDiagrammContainer {
     .container {
       max-width: 100%;
       margin: 0;
-      background: var(--container-bg);
+      background: transparent;
       border-radius: 0;
       box-shadow: none;
       overflow: visible;
@@ -3122,8 +3208,9 @@ body.dark-mode #sbDiagrammContainer {
     }
 
     .header {
-      background: var(--surface-elevated);
-      color: var(--primary-color);
+      background: #f2f6fa;
+      border-bottom: 1px solid #dde6f5;
+      color: #1e3a8a;
       padding: 8px 0;
       text-align: center;
       position: fixed;
@@ -3131,7 +3218,7 @@ body.dark-mode #sbDiagrammContainer {
       left: 0;
       right: 0;
       z-index: 1002;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 2px 10px rgba(30,58,138,0.08);
       height: 60px;
       display: flex;
       align-items: center;
@@ -5228,8 +5315,13 @@ tr.pb-row:hover {
 
       .results-count {
         font-size: 0.8em;
-        color: white !important;
-        font-weight: 500;
+        color: #1e293b !important;
+        font-weight: 600;
+      }
+
+      #leistungenAnzahl {
+        width: 100%;
+        flex-basis: 100%;
       }
 
       table {
@@ -5371,10 +5463,12 @@ tr.pb-row:hover {
     }
 
     .pb-card-dashboard .discipline {
-      font-size: 0.95em;
-      color: #616161;
-      margin-bottom: 10px;
-      font-weight: 500;
+      font-size: 0.78em;
+      color: #94a3b8;
+      margin-bottom: 8px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
 
     .pb-card-dashboard .performance {
@@ -5391,15 +5485,17 @@ tr.pb-row:hover {
     }
 
     .dashboard-section-title {
-      font-size: 1.05em;
+      font-size: 1.2em;
       font-weight: 700;
       color: #1e3c72;
-      margin: 0 0 14px 0;
-      padding: 0;
+      margin: 0 0 16px 0;
+      padding: 0 0 12px 0;
       border-left: none;
+      border-bottom: 2px solid rgba(30, 58, 138, 0.12);
       display: flex;
       align-items: center;
       gap: 7px;
+      letter-spacing: 0.01em;
     }
 
 
@@ -5584,28 +5680,28 @@ tr.pb-row:hover {
     }
     
     .dashboard-performance-container {
-      background: #f8fafc;
+      background: #f2f6fa;
       padding: 20px;
       border-radius: 12px;
-      border: 1px solid #e8eef5;
+      border: 1px solid #dde6f5;
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
       display: flex;
       flex-direction: column;
     }
 
     .dashboard-map-container {
-      background: #f8fafc;
+      background: #f2f6fa;
       padding: 20px;
       border-radius: 12px;
-      border: 1px solid #e8eef5;
+      border: 1px solid #dde6f5;
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
     }
 
     .dashboard-top3-container {
-      background: #f8fafc;
+      background: #f2f6fa;
       padding: 20px;
       border-radius: 12px;
-      border: 1px solid #e8eef5;
+      border: 1px solid #dde6f5;
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
     }
     
@@ -5636,7 +5732,7 @@ tr.pb-row:hover {
       transition: all 0.3s ease;
       cursor: pointer;
       background: #ffffff;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
     }
     
     .dashboard-top3-item:hover {
@@ -6260,7 +6356,7 @@ tr.pb-row:hover {
     }
 
       .detail-popup-content {
-    background: #f2f6fa;
+    background: #eef2f8;
     border-radius: var(--border-radius);
     max-width: 50vw;
     width: 100%;
@@ -6276,8 +6372,8 @@ tr.pb-row:hover {
   }
 
       .detail-popup-header {
-    background: linear-gradient(135deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
-    color: #1e3c72;
+    background: #1e3a8a;
+    color: #ffffff;
     padding: 12px 20px;
     border-radius: var(--border-radius) var(--border-radius) 0 0;
     display: flex;
@@ -6285,23 +6381,23 @@ tr.pb-row:hover {
     align-items: center;
     cursor: move;
     user-select: none;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
     position: relative;
     z-index: 1;
   }
 
     .detail-popup-header h2 {
       margin: 0;
-      color: navy;
+      color: #ffffff;
       font-size: 1.4em;
     }
 
     .detail-popup-close,
     .detail-popup-edit,
     .detail-popup-share {
-      background: white;
-      border: 2px solid navy;
-      color: navy;
+      background: #ffffff;
+      border: 2px solid rgba(255,255,255,0.5);
+      color: #1e3a8a;
       cursor: pointer;
       padding: 0;
       width: 36px;
@@ -6336,7 +6432,22 @@ tr.pb-row:hover {
     .detail-popup-close:hover,
     .detail-popup-edit:hover,
     .detail-popup-share:hover {
-      background: #e8eef8;
+      background: #e8f0fb;
+      border-color: #c7d8f0;
+    }
+
+    /* Wettkampf-Detailansicht: Icon-Buttons auf hellem Hintergrund */
+    #wkDetailInfo .detail-popup-edit,
+    #wkDetailInfo .detail-popup-share {
+      background: #ffffff;
+      border: 2px solid #c7d8f0;
+      color: #1e3a8a;
+    }
+    #wkDetailInfo .detail-popup-edit:hover,
+    #wkDetailInfo .detail-popup-share:hover {
+      background: #e8f0fb;
+      border-color: #1e3a8a;
+      color: #1e3a8a;
     }
 
     .detail-popup-actions {
@@ -6417,13 +6528,13 @@ tr.pb-row:hover {
   
   .detail-notizen-input:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #1e3a8a;
   }
   
   .save-notizen-btn {
     margin-top: 12px;
     padding: 10px 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
     color: white;
     border: none;
     border-radius: 8px;
@@ -6432,10 +6543,10 @@ tr.pb-row:hover {
     font-size: 0.9em;
     transition: all 0.2s;
   }
-  
+
   .save-notizen-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3);
   }
   
   .save-notizen-btn:active {
@@ -7077,11 +7188,11 @@ tr.pb-row:hover {
 
     .analyse-pill-toggle {
       display: inline-flex;
-      background: var(--container-bg, #f0f2f5);
+      background: #e4ecf8;
       border-radius: 999px;
       padding: 3px;
       gap: 0;
-      border: 1px solid rgba(30,60,114,0.1);
+      border: 1px solid rgba(30,60,114,0.12);
     }
 
     .analyse-subtab-btn {
@@ -7132,8 +7243,8 @@ tr.pb-row:hover {
     .analyse-sidebar {
       width: 230px;
       flex-shrink: 0;
-      background: #ffffff;
-      border-right: 1px solid var(--border-color, #e2e8f0);
+      background: transparent;
+      border-right: none;
       padding: 20px 12px 16px;
     }
     .analyse-nav {
@@ -7156,27 +7267,37 @@ tr.pb-row:hover {
       text-align: left;
       font-size: 0.92em;
       font-weight: 500;
-      color: var(--text-primary, #334155);
+      color: rgba(180, 210, 245, 0.75);
       transition: background 0.15s, color 0.15s;
       width: 100%;
       transform: none !important;
     }
     .analyse-nav-item:hover {
-      background: var(--hover-bg, #f1f5f9) !important;
-      color: var(--primary-color, #1e3a8a);
+      background: rgba(255,255,255,0.08) !important;
+      color: rgba(220, 235, 255, 0.95);
       transform: none !important;
       box-shadow: none !important;
     }
     .analyse-nav-item.active {
-      background: var(--primary-color, #1e3a8a) !important;
-      color: white !important;
+      background: rgba(255,255,255,0.15) !important;
+      color: #ffffff !important;
       font-weight: 600;
       transform: none !important;
     }
     .analyse-content {
-      flex: 1;
+      flex: 0 1 852px; /* cap at 852px, can shrink, margin: auto centers remainder */
       min-width: 0;
       padding: 20px 28px;
+      margin: 0 auto;
+      box-sizing: border-box;
+      background: #f2f6fa;
+      border-radius: 14px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+    }
+    /* Mirrors the sidebar so analyse-content is centered relative to full screen */
+    .analyse-sidebar-spacer {
+      width: 230px;
+      flex-shrink: 0;
     }
     .analyse-section-title {
       font-size: 1.1em;
@@ -7404,7 +7525,7 @@ tr.pb-row:hover {
     }
     .prognose-table-val {
       font-weight: 700;
-      color: #7c3aed !important;
+      color: #1e3a8a !important;
     }
     .prognose-table-range {
       color: var(--text-muted, #94a3b8) !important;
@@ -7436,6 +7557,13 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  background: linear-gradient(
+    to bottom,
+    #111e30 0%,
+    #1a3352 50%,
+    #2e5580 100%
+  );
+  background-attachment: fixed;
 }
 
 #mainApp, .main-app {
@@ -7573,7 +7701,7 @@ body.dark-mode .app-footer a {
 body.dark-mode .app-footer a:hover { color: #93c5fd !important; }
 
 /* ── Einstellungen Seite ── */
-#einstellungenTab { padding: 0; background: #ffffff; }
+#einstellungenTab { padding: 0; background: transparent; }
 body.dark-mode #einstellungenTab { background: #0f172a; }
 .settings-inline-header {
   display: flex; align-items: center; gap: 14px;
@@ -7581,18 +7709,19 @@ body.dark-mode #einstellungenTab { background: #0f172a; }
 }
 .settings-back-btn {
   display: flex; align-items: center; gap: 6px; background: none; border: none;
-  color: #64748b; font-size: 0.88em; font-weight: 500; cursor: pointer;
+  color: rgba(255,255,255,0.7); font-size: 0.88em; font-weight: 500; cursor: pointer;
   padding: 6px 10px; outline: none !important; box-shadow: none !important;
   transform: none !important;
 }
-.settings-back-btn:hover { background: #f1f5f9; color: #1e293b; box-shadow: none !important; transform: none !important; }
+.settings-back-btn:hover { background: rgba(255,255,255,0.12); color: #ffffff; box-shadow: none !important; transform: none !important; }
 .settings-back-btn:active, .settings-back-btn:focus { box-shadow: none !important; outline: none !important; transform: none !important; }
+body.dark-mode .settings-back-btn { color: rgba(255,255,255,0.6); }
 body.dark-mode .settings-back-btn:hover { background: #334155; color: #e2e8f0; }
-.settings-page-title { font-size: 1.15em; font-weight: 700; color: #1e293b; margin: 0; }
+.settings-page-title { font-size: 1.15em; font-weight: 700; color: #ffffff; margin: 0; }
 body.dark-mode .settings-page-title { color: #e2e8f0; }
 .settings-page-body { max-width: 600px; margin: 28px auto; padding: 0 20px 60px; }
 .settings-card {
-  background: #f8fafc; border-radius: 14px; border: 1px solid #e8eef5;
+  background: #f2f6fa; border-radius: 14px; border: 1px solid #dde6f5;
   margin-bottom: 20px; overflow: hidden;
 }
 body.dark-mode .settings-card { background: #1e293b; border-color: #334155; }
@@ -7903,16 +8032,16 @@ details,
 /* Identisch mit .dash-inner-tab-btn:hover */
 .wk-filter-tab:hover { color: #1e3a8a; }
 .wk-filter-tab.active {
-  background: #ffffff !important;
-  color: #1e3a8a;
+  background: #1e3a8a !important;
+  color: #ffffff;
   font-weight: 700;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.10) !important;
+  box-shadow: 0 2px 8px rgba(30,58,138,0.25) !important;
 }
 
-/* CSV-Export: blasses Grün (Wettkämpfe + Leistungen) */
+/* Wettkampf-Listeneinträge */
 .wk-list-item {
-  background: #fff;
-  border: 1px solid #e8eef5;
+  background: #ffffff;
+  border: 1px solid #dde6f5;
   border-radius: 9px;
   padding: 13px 16px;
   cursor: pointer;
@@ -8132,12 +8261,12 @@ body.dark-mode .wk-list-item .wk-item-disz { color: var(--text-secondary); }
 
 /* Dark mode */
 [data-theme="dark"] .header-tab-btn .tab-underline,
-/* ===== PLUS BUTTON HEADER ===== */
+/* ===== ADD BUTTONS HEADER ===== */
 .header-add-btn {
-  width: 40px !important;
   height: 40px !important;
-  padding: 0 !important;
-  background: linear-gradient(135deg, #1e3c72, #764ba2) !important;
+  width: auto !important;
+  padding: 0 14px 0 11px !important;
+  background: #1e3a8a !important;
   border: none !important;
   border-radius: 20px !important;
   color: #fff !important;
@@ -8150,43 +8279,44 @@ body.dark-mode .wk-list-item .wk-item-disz { color: var(--text-secondary); }
 }
 .header-add-btn svg {
   stroke: #ffffff;
-  transition: stroke 0.2s;
+  flex-shrink: 0;
 }
 .header-add-btn:hover {
-  background: rgba(30, 58, 138, 0.15) !important;
-  border: 2px solid rgba(30, 58, 138, 0.3) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: scale(1.05) !important;
+  background: #1e40af !important;
+  box-shadow: 0 4px 14px rgba(30,58,138,0.38) !important;
+  transform: translateY(-1px) !important;
 }
-.header-add-btn:hover svg {
-  stroke: #1e3c72 !important;
+/* Plus label inside button */
+.header-add-btn .header-add-plus {
+  font-size: 1.15em;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255,255,255,0.9);
+  margin-right: 4px;
+  letter-spacing: -0.5px;
 }
-/* Zweiter Plus-Button: Training/Wettkampf (orange-amber, Kalender-Icon) */
+/* Training: slightly lighter navy to visually distinguish */
 .header-add-event {
-  background: linear-gradient(135deg, #f59e0b, #ea580c) !important;
-  box-shadow: 0 2px 8px rgba(234,88,12,0.3) !important;
+  background: #1d4ed8 !important;
+  box-shadow: 0 2px 8px rgba(29,78,216,0.32) !important;
 }
 .header-add-event:hover {
-  background: rgba(234, 88, 12, 0.15) !important;
-  border: 2px solid rgba(234, 88, 12, 0.35) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: scale(1.05) !important;
+  background: #2563eb !important;
+  box-shadow: 0 4px 14px rgba(29,78,216,0.42) !important;
 }
-.header-add-event:hover svg {
-  stroke: #c2410c !important;
-}
-/* Wettkampf button: blue gradient (base .header-add-btn, no override needed) */
+/* Competition: dark navy */
 .header-add-competition {
-  background: linear-gradient(135deg, #1e3c72, #2563eb) !important;
-  box-shadow: 0 2px 8px rgba(30,60,114,0.35) !important;
+  background: #1e3a8a !important;
+  box-shadow: 0 2px 8px rgba(30,58,138,0.35) !important;
 }
 .header-add-competition:hover {
-  background: rgba(30,58,138,0.15) !important;
-  border: 2px solid rgba(30,58,138,0.35) !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
-  transform: scale(1.05) !important;
+  background: #1e40af !important;
+  box-shadow: 0 4px 14px rgba(30,58,138,0.42) !important;
 }
-.header-add-competition:hover svg { stroke: #1e3c72 !important; }
+/* Dark mode adjustments */
+body.dark-mode .header-add-competition { background: #1e3a8a !important; }
+body.dark-mode .header-add-event { background: #1d4ed8 !important; }
+body.dark-mode .header-add-btn:hover { background: #1e40af !important; }
 .profile-dropdown-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 18px; flex-shrink: 0; color: #64748b;
@@ -8440,6 +8570,14 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
         -webkit-overflow-scrolling: touch;
         margin: 0 !important;
       }
+      #leistungenAusgabe {
+        width: 100% !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+      }
+      #leistungenTopBar {
+        padding: 0 12px !important;
+      }
 
       table {
         font-size: 0.78em !important;
@@ -8595,6 +8733,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
         box-sizing: border-box !important;
         min-width: 0 !important;
       }
+      #analyseTab .analyse-sidebar-spacer { display: none !important; }
 
       /* Analyse-Panel volle Breite → gleiche Breite wie Statistiken/Bestleistungen */
       #analyseTab .analyse-panel {
@@ -8809,7 +8948,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
   @keyframes authFadeIn  { to { opacity: 1; } }
 </style>
 
-<div id="loginScreen" style="display: none; justify-content: center; align-items: center; min-height: 100vh; background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); padding: 10px;">
+<div id="loginScreen" style="display: none; justify-content: center; align-items: center; position: fixed; inset: 0; overflow-y: auto; background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); padding: 10px;">
   <div style="background: #f2f6fa;  padding: 20px; border-radius: var(--border-radius); box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-width: 450px; width: 100%;">
     
     <!-- Logo -->
@@ -9179,8 +9318,9 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
 
       <!-- Wettkampf erstellen -->
-      <button class="icon-button header-add-btn header-add-competition" onclick="openWettkampfFormModal()" title="Wettkampf erstellen">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="icon-button header-add-btn header-add-competition" onclick="openWettkampfFormModal()" title="Wettkampf erstellen" style="gap:6px;">
+        <span class="header-add-plus">+</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
           <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
           <path d="M4 22h16"/>
@@ -9190,8 +9330,9 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
         </svg>
       </button>
       <!-- Training hinzufügen -->
-      <button class="icon-button header-add-btn header-add-event" onclick="openEventForm('training')" title="Training hinzufügen">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="icon-button header-add-btn header-add-event" onclick="openEventForm('training')" title="Training hinzufügen" style="gap:6px;">
+        <span class="header-add-plus">+</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
         </svg>
       </button>
@@ -9212,54 +9353,98 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
       <div id="dashboardTab" class="tab-content active">
         <div class="dash-content-wrap">
 
-        <!-- Stats + Wochenleiste -->
-        <div id="dashboardWeekStrip" class="dash-stats-week-card" style="display:none;">
-          <!-- Stats-Zeile -->
-          <div class="dash-stats-row">
-            <div class="dash-stat-tile" onclick="switchTab('leistungen')" title="Leistungen anzeigen">
-              <div class="dash-stat-value" id="statTotalLeistungen">–</div>
-              <div class="dash-stat-label">Leistungen</div>
-            </div>
-            <div class="dash-stat-tile" onclick="switchTab('wettkaempfe')" title="Wettkämpfe anzeigen">
-              <div class="dash-stat-value" id="statTotalWettkaempfe">–</div>
-              <div class="dash-stat-label">Wettkämpfe</div>
-            </div>
-            <div class="dash-stat-tile" onclick="openDisziplinenPopup()" title="Disziplinen anzeigen">
-              <div class="dash-stat-value" id="statTotalDisziplinen">–</div>
-              <div class="dash-stat-label">Disziplinen</div>
-            </div>
-            <div class="dash-stat-tile" onclick="openAktivSeitPopup()" title="Aktiv seit">
-              <div class="dash-stat-value" id="statCurrentYear">–</div>
-              <div class="dash-stat-label">Aktiv seit</div>
-            </div>
-          </div>
-          <!-- Wochenleiste -->
-          <div class="dash-stats-week-divider"></div>
-          <div class="dash-week-strip-head">
-            <div class="dash-week-strip-nav">
-              <button type="button" class="dash-week-nav-btn" id="dashWeekPrev" onclick="dashWeekChange(-1)" aria-label="Vorherige Woche" title="Vorherige Woche (←)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-              </button>
-              <div class="dash-week-strip-title" id="dashWeekTitle">Diese Woche</div>
-              <button type="button" class="dash-week-nav-btn" id="dashWeekNext" onclick="dashWeekChange(1)" aria-label="Nächste Woche" title="Nächste Woche (→)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-              </button>
-              <button type="button" class="dash-week-today-btn" id="dashWeekToday" onclick="dashWeekGoToday()" title="Aktuelle Woche">Heute</button>
-            </div>
-            <button type="button" class="dash-week-strip-link" onclick="switchTab('kalender')">
-              Zum Kalender
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-          </div>
-          <div class="dash-week-strip-grid" id="dashWeekStripGrid"></div>
-        </div>
+        <!-- Dreispalten-Layout: Links WKs · Mitte Stats + Kalender + Tabs · Rechts SBs/PBs -->
+        <div class="dash-three-col" id="dashThreeCol" style="display:none;">
 
-        <!-- Dashboard Inner Tabs -->
-        <div id="dashInnerTabs" style="display:none;">
+          <!-- ── Linke Spalte: Minikarte + Wettkämpfe ── -->
+          <div class="dash-left-col">
+
+            <!-- Minikarte -->
+            <div class="dash-side-panel" id="dashMiniMapPanel">
+              <div class="dash-side-panel-header">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                Wettkampforte
+              </div>
+              <div id="dashMiniMap" class="dash-mini-map"></div>
+            </div>
+
+            <!-- Kommende Wettkämpfe -->
+            <div class="dash-side-panel" id="dashLeftPanelFuture">
+              <div class="dash-side-panel-header dash-side-panel-header--future">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Kommende Wettkämpfe
+              </div>
+              <div id="dashSideFutureWk"></div>
+            </div>
+
+            <!-- Vergangene Wettkämpfe -->
+            <div class="dash-side-panel" id="dashLeftPanelPast">
+              <div class="dash-side-panel-header">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Vergangene Wettkämpfe
+              </div>
+              <div id="dashSidePastWk"></div>
+            </div>
+
+          </div><!-- /.dash-left-col -->
+
+          <!-- ── Mittlere Spalte: Stats + Kalender + Inner Tabs ── -->
+          <div class="dash-center-col">
+
+            <!-- Stats-Card (nur in der mittleren Spalte) -->
+            <div id="dashboardWeekStrip" class="dash-stats-week-card" style="display:none;">
+              <div class="dash-stats-row">
+                <div class="dash-stat-tile" onclick="switchTab('leistungen')" title="Leistungen anzeigen">
+                  <div class="dash-stat-value" id="statTotalLeistungen">–</div>
+                  <div class="dash-stat-label">Leistungen</div>
+                  <div class="dash-stat-sub" id="statLeistungenSub"></div>
+                </div>
+                <div class="dash-stat-tile" onclick="switchTab('wettkaempfe')" title="Wettkämpfe anzeigen">
+                  <div class="dash-stat-value" id="statTotalWettkaempfe">–</div>
+                  <div class="dash-stat-label">Wettkämpfe</div>
+                  <div class="dash-stat-sub" id="statWettkaempfeSub"></div>
+                </div>
+                <div class="dash-stat-tile" onclick="openDisziplinenPopup()" title="Disziplinen anzeigen">
+                  <div class="dash-stat-value" id="statTotalDisziplinen">–</div>
+                  <div class="dash-stat-label">Disziplinen</div>
+                  <div class="dash-stat-sub" id="statDisziplinenSub"></div>
+                </div>
+                <div class="dash-stat-tile" onclick="openErsterWettkampf()" title="Aktiv seit">
+                  <div class="dash-stat-value" id="statCurrentYear">–</div>
+                  <div class="dash-stat-label">Aktiv seit</div>
+                  <div class="dash-stat-sub" id="statActiveSub"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Kalender-Card -->
+            <div id="dashCalendarCard" class="dash-calendar-card" style="display:none;">
+              <div class="dash-week-strip-head">
+                <div class="dash-week-strip-nav">
+                  <button type="button" class="dash-week-nav-btn" id="dashWeekPrev" onclick="dashWeekChange(-1)" aria-label="Vorherige Woche" title="Vorherige Woche (←)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                  <div class="dash-week-strip-title" id="dashWeekTitle">Diese Woche</div>
+                  <button type="button" class="dash-week-nav-btn" id="dashWeekNext" onclick="dashWeekChange(1)" aria-label="Nächste Woche" title="Nächste Woche (→)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                  <button type="button" class="dash-week-today-btn" id="dashWeekToday" onclick="dashWeekGoToday()" title="Aktuelle Woche">Heute</button>
+                </div>
+                <button type="button" class="dash-week-strip-link" onclick="switchTab('kalender')">
+                  Zum Kalender
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
+              <div class="dash-week-strip-grid" id="dashWeekStripGrid"></div>
+              <!-- Letzter / Nächster WK (nur auf Mobile sichtbar) -->
+              <div class="dash-wk-row" id="dashWkRow" style="display:none;"></div>
+            </div>
+
+            <!-- Dashboard Inner Tabs -->
+            <div id="dashInnerTabs" style="display:none;">
           <div class="dash-inner-card">
           <div class="dash-inner-tab-bar">
             <button class="dash-inner-tab-btn active" onclick="switchDashTab('entwicklung')">Entwicklung</button>
-            <button class="dash-inner-tab-btn" onclick="switchDashTab('bestleistungen')">Bestleistungen</button>
             <button class="dash-inner-tab-btn" onclick="switchDashTab('karte')">Karte</button>
           </div>
 
@@ -9329,58 +9514,95 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           </div>
 
           </div><!-- /.dash-inner-card -->
-        </div><!-- /#dashInnerTabs -->
+            </div><!-- /#dashInnerTabs -->
+
+          </div><!-- /.dash-center-col -->
+
+          <!-- ── Rechte Spalte: SBs + PBs (getrennte Container) ── -->
+          <div class="dash-right-col">
+
+            <!-- Saisonbestleistungen -->
+            <div class="dash-side-panel">
+              <div class="dash-side-panel-header" onclick="switchTab('analyse');switchAnalyseSection('bestleistungen');setTimeout(zeigeSBsDirekt,120);" style="cursor:pointer;" title="Alle Saisonbestleistungen in Analyse anzeigen">
+                Saisonbestleistungen <span id="dashSBYear" class="dash-side-year"></span>
+              </div>
+              <div id="dashSideSBs"></div>
+            </div>
+
+            <!-- Persönliche Bestleistungen -->
+            <div class="dash-side-panel">
+              <div class="dash-side-panel-header dash-side-panel-header--pb" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="switchTab('analyse');switchAnalyseSection('bestleistungen');setTimeout(zeigePBs,120);" title="Persönliche Bestleistungen in Analyse anzeigen">
+                <span>Persönliche Bestleistungen</span>
+                <div class="dash-pb-sort-toggle" id="dashPBSortToggle">
+                  <button class="dash-pb-sort-btn active" id="dashPBSortDisz" onclick="event.stopPropagation();setDashPBSort('disziplin')" title="Nach Disziplin sortieren">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  </button>
+                  <button class="dash-pb-sort-btn" id="dashPBSortScore" onclick="event.stopPropagation();setDashPBSort('score')" title="Nach Score sortieren">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div id="dashSidePBs"></div>
+            </div>
+
+          </div><!-- /.dash-right-col -->
+
+        </div><!-- /.dash-three-col -->
         </div><!-- /.dash-content-wrap -->
 
         <style>
           /* ── Stats+Week combined card ── */
           .dash-stats-week-card {
-            margin: 0 15px 22px 15px;
-            background: #f8fafc;
-            border: 1px solid #e8eef5;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-            padding: 14px 16px;
+            margin: 0 0 16px 0;
+            background: #f2f6fa;
+            border: 1px solid #dde6f5;
+            border-radius: 14px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+            box-shadow: 0 4px 18px rgba(30,58,138,0.10);
+            padding: 0;
+            overflow: hidden;
           }
           .dash-stats-row {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 0;
-            margin-bottom: 2px;
+            margin-bottom: 0;
+            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
           }
           .dash-stat-tile {
-            padding: 10px 14px;
+            padding: 20px 14px 16px;
             text-align: center;
             cursor: pointer;
-            border-right: 1px solid #e2e8f0;
+            border-right: 1px solid rgba(255,255,255,0.13);
             transition: background 0.15s;
-            border-radius: 8px;
+            border-radius: 0;
           }
           .dash-stat-tile:last-child { border-right: none; }
-          .dash-stat-tile:hover { background: #eef4ff; }
+          .dash-stat-tile:hover { background: rgba(255,255,255,0.09); }
           .dash-stat-value {
-            font-size: 1.5em;
-            font-weight: 700;
-            color: #1e3c72;
-            line-height: 1.15;
+            font-size: 2em;
+            font-weight: 800;
+            color: #ffffff;
+            line-height: 1.1;
           }
           .dash-stat-label {
-            font-size: 0.7em;
-            font-weight: 600;
-            color: #64748b;
+            font-size: 0.6em;
+            font-weight: 500;
+            color: rgba(255,255,255,0.42);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 2px;
+            letter-spacing: 0.08em;
+            margin-top: 5px;
           }
           .dash-stats-week-divider {
             height: 1px;
             background: #e8eef5;
-            margin: 10px 0;
+            margin: 0 16px;
           }
           /* ── Week strip inner ── */
           .dash-week-strip-head {
             display: flex; align-items: center; justify-content: space-between;
             gap: 12px; margin-bottom: 10px; flex-wrap: wrap;
+            padding: 14px 16px 0;
           }
           .dash-week-strip-nav {
             display: flex; align-items: center; gap: 6px;
@@ -9405,17 +9627,18 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             min-width: 170px; text-align: center;
           }
           .dash-week-strip-link {
-            background: none; border: none; cursor: pointer;
+            background: transparent; border: none; cursor: pointer;
             color: #1e3a8a; font-size: 0.85em; font-weight: 600;
             display: inline-flex; align-items: center; gap: 4px;
-            padding: 4px 6px; border-radius: 6px;
+            padding: 4px 10px; border-radius: 6px;
           }
           .dash-week-strip-link:hover { background: #eef4ff; }
           .dash-week-strip-grid {
             display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
+            padding: 0 16px 16px;
           }
           .dash-day {
-            background: #ffffff; border: 1px solid #e2e8f0; border-radius: 9px;
+            background: #f2f6fa; border: 1px solid #dde6f5; border-radius: 9px;
             padding: 8px 6px; cursor: pointer; height: 96px; overflow: hidden;
             display: flex; flex-direction: column; gap: 4px;
             transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
@@ -9454,7 +9677,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           }
           /* ── Disziplin-Charts ── */
           .dash-disz-chart-card {
-            background: #f8fafc;
+            background: #f2f6fa;
             border: 1px solid #e8eef5;
             border-radius: 12px;
             padding: 16px 16px 12px;
@@ -9476,15 +9699,134 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             color: #64748b;
             white-space: nowrap;
           }
+          /* ── Stat Sub-Info ── */
+          .dash-stat-sub {
+            font-size: 0.72em;
+            font-weight: 600;
+            color: rgba(255,255,255,0.88);
+            margin-top: 4px;
+            line-height: 1.2;
+            min-height: 1em;
+          }
+
+          /* ── Kalender-Card ── */
+          .dash-calendar-card {
+            margin: 0;
+            background: #f2f6fa;
+            border: 1px solid #dde6f5;
+            border-radius: 14px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+            box-shadow: 0 4px 18px rgba(30,58,138,0.10);
+            padding: 0;
+            overflow: hidden;
+          }
+
+          /* ── Letzter / Nächster Wettkampf ── */
+          .dash-wk-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            border-top: 1px solid #e8eef5;
+            padding: 12px 14px;
+            background: #f2f6fa;
+          }
+          .dash-wk-item {
+            background: #f2f6fa;
+            border-radius: 10px;
+            padding: 12px 14px;
+            cursor: pointer;
+            transition: box-shadow 0.15s, transform 0.12s;
+            border-left: 4px solid #1e3a8a;
+            box-shadow: 0 1px 4px rgba(30,58,138,0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+          }
+          .dash-wk-item.dash-wk-next {
+            border-left-color: #f59e0b;
+            box-shadow: 0 1px 4px rgba(245,158,11,0.10);
+          }
+          .dash-wk-item:hover {
+            box-shadow: 0 3px 10px rgba(30,58,138,0.14);
+            transform: translateY(-1px);
+          }
+          .dash-wk-item.dash-wk-next:hover {
+            box-shadow: 0 3px 10px rgba(245,158,11,0.18);
+          }
+          .dash-wk-badge {
+            font-size: 0.62em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #1e3a8a;
+            margin-bottom: 2px;
+          }
+          .dash-wk-item.dash-wk-next .dash-wk-badge {
+            color: #d97706;
+          }
+          .dash-wk-name {
+            font-size: 0.86em;
+            font-weight: 700;
+            color: #1e293b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .dash-wk-meta {
+            font-size: 0.73em;
+            color: #64748b;
+            margin-top: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .dash-wk-leistungen {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid #e8eef5;
+          }
+          .dash-wk-leist-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.72em;
+            color: #334155;
+            gap: 6px;
+          }
+          .dash-wk-leist-disz {
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #1e3a8a;
+          }
+          .dash-wk-leist-val {
+            font-weight: 700;
+            white-space: nowrap;
+            color: #1e293b;
+          }
+          .dash-wk-empty {
+            cursor: default;
+            opacity: 0.6;
+          }
+          .dash-wk-empty:hover {
+            transform: none;
+            box-shadow: 0 1px 4px rgba(30,58,138,0.08);
+          }
+
           /* ── Dark Mode ── */
           body.dark-mode .dash-stats-week-card {
-            background: #0f172a; border-color: #334155;
+            background: #1c2230; border-color: #2d3b55;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.3);
           }
-          body.dark-mode .dash-stat-value { color: #93c5fd; }
-          body.dark-mode .dash-stat-label { color: #94a3b8; }
-          body.dark-mode .dash-stat-tile:hover { background: #1e293b; }
-          body.dark-mode .dash-stat-tile { border-right-color: #334155; }
-          body.dark-mode .dash-stats-week-divider { background: #334155; }
+          body.dark-mode .dash-stat-value { color: #ffffff; }
+          body.dark-mode .dash-stat-label { color: rgba(255,255,255,0.52); }
+          body.dark-mode .dash-stat-tile:hover { background: rgba(255,255,255,0.08); }
+          body.dark-mode .dash-stat-tile { border-right-color: rgba(255,255,255,0.12); }
+          body.dark-mode .dash-stats-week-divider { background: #2d3b55; }
           body.dark-mode .dash-week-strip-title { color: #93c5fd; }
           body.dark-mode .dash-day { background: #1e293b; border-color: #334155; }
           body.dark-mode .dash-day:hover { background: #1e3a5f; }
@@ -9497,6 +9839,21 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           body.dark-mode .dash-week-today-btn:hover {
             background: #1e293b; border-color: #93c5fd;
           }
+          body.dark-mode .dash-calendar-card {
+            background: #1e293b; border-color: #2d3748;
+          }
+          body.dark-mode .dash-wk-row { border-top-color: #2d3748; background: #1c2230; }
+          body.dark-mode .dash-wk-item { background: #1e293b; border-left-color: #3b82f6; }
+          body.dark-mode .dash-wk-item.dash-wk-next { border-left-color: #f59e0b; }
+          body.dark-mode .dash-wk-item:hover { background: #1e3a5f; }
+          body.dark-mode .dash-wk-badge { color: #93c5fd; }
+          body.dark-mode .dash-wk-item.dash-wk-next .dash-wk-badge { color: #fbbf24; }
+          body.dark-mode .dash-wk-name { color: #e2e8f0; }
+          body.dark-mode .dash-wk-meta { color: #64748b; }
+          body.dark-mode .dash-wk-leistungen { border-top-color: #334155; }
+          body.dark-mode .dash-wk-leist-disz { color: #93c5fd; }
+          body.dark-mode .dash-wk-leist-val { color: #e2e8f0; }
+          body.dark-mode .dash-stat-sub { color: rgba(255,255,255,0.88); font-weight: 600; }
           body.dark-mode .dash-disz-chart-card {
             background: #1e293b; border-color: #334155;
           }
@@ -9504,21 +9861,238 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           body.dark-mode .dash-disz-chart-count { color: #94a3b8; }
           /* ── Dashboard center wrapper ── */
           .dash-content-wrap {
-            max-width: 900px;
+            /* 210 + 32 + 852 + 32 + 210 + 2×18 padding = 1372px */
+            max-width: 1376px;
             margin: 0 auto;
-            padding: 20px 24px 36px;
+            padding: 20px 18px 36px;
             box-sizing: border-box;
           }
           .dash-content-wrap .dash-stats-week-card {
             margin: 0 0 16px 0;
+            padding: 0;
           }
+          /* ── Dreispalten-Layout ── */
+          .dash-three-col {
+            display: grid;
+            grid-template-columns: 210px 852px 210px;
+            gap: 32px;
+            align-items: start;
+            justify-content: center;
+          }
+          .dash-center-col {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+          /* ── Linke/Rechte Spalten-Wrapper (sticky) ── */
+          .dash-left-col,
+          .dash-right-col {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            position: sticky;
+            top: 76px;
+          }
+          /* ── Seiten-Panel (Links & Rechts) ── */
+          .dash-side-panel {
+            background: #f2f6fa;
+            border: 1px solid #dde6f5;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+          }
+          /* ── Mini-Karte ── */
+          .dash-mini-map {
+            height: 180px;
+            width: 100%;
+            background: #dde6f5;
+          }
+          .dash-mini-map .leaflet-control-attribution { display: none !important; }
+          .dash-side-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 14px 9px;
+            font-size: 0.68em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+            color: #1e3a8a;
+            background: #f2f6fa;
+            border-bottom: 1px solid #dde6f5;
+          }
+          .dash-side-panel-header--future {
+            color: #b45309;
+            background: #f2f6fa;
+            border-top: 1px solid #dde6f5;
+          }
+          .dash-side-panel-header--pb {
+            color: #1e3a8a;
+            background: #f2f6fa;
+            border-top: 1px solid #dde6f5;
+          }
+          .dash-side-year {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: none;
+            letter-spacing: 0;
+          }
+          /* ── WK-Einträge in Seitenpanel ── */
+          .dash-side-wk-item {
+            padding: 9px 14px 8px;
+            border-bottom: 1px solid #f0f4fa;
+            cursor: pointer;
+            transition: background 0.12s;
+          }
+          .dash-side-wk-item:last-child { border-bottom: none; }
+          .dash-side-wk-item:hover { background: #f0f4ff; }
+          .dash-side-wk-item.dash-side-wk-future:hover { background: #fffbeb; }
+          .dash-side-wk-date {
+            font-size: 0.67em;
+            font-weight: 700;
+            color: #1e3a8a;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 2px;
+          }
+          .dash-side-wk-future .dash-side-wk-date { color: #d97706; }
+          .dash-side-wk-name {
+            font-size: 0.82em;
+            font-weight: 600;
+            color: #1e293b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .dash-side-wk-ort {
+            font-size: 0.72em;
+            color: #64748b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 1px;
+          }
+          .dash-side-empty {
+            padding: 12px 14px;
+            font-size: 0.78em;
+            color: #94a3b8;
+            font-style: italic;
+          }
+          /* ── SB-Einträge in Seitenpanel ── */
+          .dash-side-sb-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-bottom: 1px solid #f0f4fa;
+            cursor: pointer;
+            transition: background 0.12s;
+          }
+          .dash-side-sb-item:last-child { border-bottom: none; }
+          .dash-side-sb-item:hover { background: #f0f4ff; }
+          .dash-side-sb-left { min-width: 0; flex: 1; }
+          .dash-side-sb-disz {
+            font-size: 0.82em;
+            font-weight: 600;
+            color: #1e293b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .dash-side-sb-pb {
+            font-size: 0.68em;
+            color: #94a3b8;
+            margin-top: 1px;
+          }
+          .dash-side-sb-val {
+            font-size: 0.86em;
+            font-weight: 800;
+            color: #1e3a8a;
+            white-space: nowrap;
+            flex-shrink: 0;
+          }
+          /* Mobile: Seitenspalten ausblenden, Dreispalten → einspaltig */
+          @media (max-width: 900px) {
+            .dash-three-col {
+              grid-template-columns: 1fr;
+            }
+            .dash-left-col,
+            .dash-right-col {
+              display: none;
+            }
+          }
+          /* Desktop: dash-wk-row ausblenden — Panels übernehmen */
+          @media (min-width: 901px) {
+            .dash-wk-row { display: none !important; }
+          }
+          /* Dark mode side panels */
+          body.dark-mode .dash-side-panel {
+            background: #1e293b;
+            border-color: #334155;
+          }
+          body.dark-mode .dash-mini-map { background: #1a2340; }
+          body.dark-mode .dash-side-panel-header {
+            background: #162032;
+            border-color: #334155;
+            color: #93c5fd;
+          }
+          body.dark-mode .dash-side-panel-header--future {
+            background: #1c1408;
+            color: #fbbf24;
+            border-color: #334155;
+          }
+          body.dark-mode .dash-side-wk-item { border-color: #1e293b; }
+          body.dark-mode .dash-side-wk-item:hover { background: #1e3a5f; }
+          body.dark-mode .dash-side-wk-date { color: #93c5fd; }
+          body.dark-mode .dash-side-wk-future .dash-side-wk-date { color: #fbbf24; }
+          body.dark-mode .dash-side-wk-name { color: #e2e8f0; }
+          body.dark-mode .dash-side-wk-ort { color: #64748b; }
+          body.dark-mode .dash-side-sb-item { border-color: #1e293b; }
+          body.dark-mode .dash-side-sb-item:hover { background: #1e3a5f; }
+          body.dark-mode .dash-side-sb-disz { color: #e2e8f0; }
+          body.dark-mode .dash-side-sb-val { color: #93c5fd; }
+          body.dark-mode .dash-side-sb-pb { color: #475569; }
+          body.dark-mode .dash-side-panel-header--pb { background: #162032; border-color: #334155; color: #93c5fd; }
+          /* PB Sort Toggle */
+          .dash-pb-sort-toggle {
+            display: flex;
+            background: rgba(30,58,138,0.08);
+            border-radius: 6px;
+            padding: 2px;
+            gap: 1px;
+            flex-shrink: 0;
+          }
+          .dash-pb-sort-btn {
+            background: transparent;
+            border: none;
+            color: #1e3a8a;
+            cursor: pointer;
+            width: 22px;
+            height: 22px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.45;
+            transition: background 0.15s, opacity 0.15s;
+            padding: 0;
+          }
+          .dash-pb-sort-btn:hover { opacity: 0.75; background: rgba(30,58,138,0.1); }
+          .dash-pb-sort-btn.active { background: #1e3a8a; color: #fff; opacity: 1; }
+          .dash-pb-sort-btn.active svg { stroke: #fff; }
+          body.dark-mode .dash-pb-sort-toggle { background: rgba(147,197,253,0.1); }
+          body.dark-mode .dash-pb-sort-btn { color: #93c5fd; }
+          body.dark-mode .dash-pb-sort-btn.active { background: #1e3a8a; color: #fff; }
           /* ── Inner tabs: Box-Wrapper ── */
           .dash-inner-card {
-            background: #f8fafc;
-            border: 1px solid #e8eef5;
+            background: #f2f6fa;
+            border: 1px solid #dde6f5;
             border-radius: 14px;
             padding: 16px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            box-shadow: 0 2px 16px rgba(0,0,0,0.22);
           }
           /* ── Karten innerhalb der Box: weißer Hintergrund ── */
           .dash-inner-card .dash-disz-chart-card,
@@ -9531,12 +10105,12 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             display: flex;
             gap: 0;
             width: 100%;
-            background: #f8fafc;
+            background: #f2f6fa;
             border-radius: 9px;
             padding: 4px;
             box-sizing: border-box;
             margin-bottom: 18px;
-            border: 1px solid #e8eef5;
+            border: 1px solid #dde6f5;
           }
           .dash-inner-tab-btn {
             flex: 1;
@@ -9555,10 +10129,10 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           }
           .dash-inner-tab-btn:hover { color: #1e3a8a; }
           .dash-inner-tab-btn.active {
-            background: #ffffff !important;
-            color: #1e3a8a;
+            background: #1e3a8a !important;
+            color: #ffffff !important;
             font-weight: 700;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.10) !important;
+            box-shadow: 0 1px 6px rgba(30,58,138,0.28) !important;
           }
           body.dark-mode .dash-inner-card { background: #1e293b; border-color: #334155; }
           body.dark-mode .dash-inner-card .dash-disz-chart-card,
@@ -9567,12 +10141,24 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           body.dark-mode .dash-inner-tab-bar { background: #1e293b; border-color: #334155; }
           body.dark-mode .dash-inner-tab-btn { color: #94a3b8; }
           body.dark-mode .dash-inner-tab-btn:hover { color: #93c5fd; }
-          body.dark-mode .dash-inner-tab-btn.active { background: #0f172a; color: #93c5fd; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+          body.dark-mode .dash-inner-tab-btn.active { background: #1e3a8a !important; color: #ffffff !important; box-shadow: 0 1px 6px rgba(30,58,138,0.5) !important; }
           @media (max-width: 700px) {
             .dash-stats-row { grid-template-columns: repeat(2, 1fr); }
+            .dash-stat-tile { padding: 16px 10px 12px; }
+            .dash-stat-value { font-size: 1.6em; }
             .dash-week-strip-grid { grid-template-columns: repeat(7, 1fr); gap: 4px; }
             .dash-day { min-height: 70px; padding: 5px 3px; }
             .dash-day-num { font-size: 0.9em; }
+            /* Kalender-Navigation sichtbar machen */
+            .dash-week-nav-btn {
+              width: 36px; height: 36px;
+              background: #1e3a8a !important;
+              border-color: #1e3a8a !important;
+              color: #ffffff !important;
+              border-radius: 9px;
+            }
+            .dash-week-nav-btn svg { width: 18px; height: 18px; }
+            .dash-week-strip-head { padding: 12px 12px 0; }
           }
         </style>
 
@@ -9689,7 +10275,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
               </button>
               <button class="analyse-nav-item" data-section="sb" onclick="switchAnalyseSection('sb')">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                SB & Durchschnitt
+                Saisonbestleistungen
               </button>
               <button class="analyse-nav-item" data-section="prognose" onclick="switchAnalyseSection('prognose')">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L14 8.5L19 10L14 11.5L12 17L10 11.5L5 10L10 8.5L12 3Z"/></svg>
@@ -9718,19 +10304,19 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                 <div class="analyse-panel-filters">
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Disziplin</span>
-                    <select id="analyseDisziplin" class="analyse-pf-input" onchange="if(document.getElementById('diagrammContainer').style.display!=='none')zeigeDiagramm();">
+                    <select id="analyseDisziplin" class="analyse-pf-input" onchange="zeigeDiagramm();">
                       <option value="">– alle –</option>
                     </select>
                   </div>
 
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Zeitraum</span>
-                    <select id="analyseFilterJahr" class="analyse-pf-input" onchange="if(document.getElementById('diagrammContainer').style.display!=='none')zeigeDiagramm();">
+                    <select id="analyseFilterJahr" class="analyse-pf-input" onchange="zeigeDiagramm();">
                       <option value="">– Jahr wählen –</option>
                     </select>
                     <div class="analyse-pf-date-row" style="margin-top:5px;">
-                      <input type="date" id="analyseFilterFrom" class="analyse-pf-input" onchange="if(document.getElementById('diagrammContainer').style.display!=='none')zeigeDiagramm();">
-                      <input type="date" id="analyseFilterTo" class="analyse-pf-input" onchange="if(document.getElementById('diagrammContainer').style.display!=='none')zeigeDiagramm();">
+                      <input type="date" id="analyseFilterFrom" class="analyse-pf-input" onchange="zeigeDiagramm();">
+                      <input type="date" id="analyseFilterTo" class="analyse-pf-input" onchange="zeigeDiagramm();">
                     </div>
                   </div>
 
@@ -9742,22 +10328,17 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                       <img src="icons/score.png" width="14" height="14" style="object-fit:contain;opacity:0.75;vertical-align:middle;flex-shrink:0;cursor:default;" title="Nur für Score-Disziplinen verfügbar" alt="Score">
                     </label>
                     <div id="vergleichsDisziplinContainer" style="display:none;margin-top:4px;">
-                      <select id="vergleichsDisziplin" class="analyse-pf-input" onchange="if(document.getElementById('diagrammContainer').style.display!=='none')zeigeDiagramm();">
+                      <select id="vergleichsDisziplin" class="analyse-pf-input" onchange="zeigeDiagramm();">
                         <option value="">– Disziplin –</option>
                       </select>
                     </div>
                   </div>
 
-                  <div class="analyse-pf-actions">
-                    <button id="diagrammAnzeigenBtn" onclick="zeigeDiagramm()">Entwicklung anzeigen</button>
-                    <button id="diagrammSchließenBtn" onclick="schließeDiagramm()" style="display:none;">Einklappen</button>
-                    <button id="diagrammAusklappenBtn" onclick="klappeAusDiagramm()" style="display:none;">Ausklappen</button>
-                  </div>
                 </div>
 
                 <!-- Chart rechts -->
                 <div class="analyse-panel-chart">
-                  <div id="diagrammContainer" style="display:none; background:#f2f6fa; padding:10px; border-radius:8px;">
+                  <div id="diagrammContainer" style="background:#f2f6fa; padding:10px; border-radius:8px;">
                     <h4 style="margin:0 0 10px 0; color:#2a5298;">Leistungsdiagramm</h4>
                     <div style="height:400px;"><canvas id="leistungsChart"></canvas></div>
                   </div>
@@ -9776,19 +10357,19 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                 <div class="analyse-panel-filters">
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Disziplin</span>
-                    <select id="sbDisziplin" class="analyse-pf-input">
+                    <select id="sbDisziplin" class="analyse-pf-input" onchange="zeigeSBDiagramm()">
                       <option value="">– Disziplin –</option>
                     </select>
                   </div>
 
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Zeitraum</span>
-                    <select id="sbFilterJahr" class="analyse-pf-input">
+                    <select id="sbFilterJahr" class="analyse-pf-input" onchange="zeigeSBDiagramm()">
                       <option value="">– Jahr wählen –</option>
                     </select>
                     <div class="analyse-pf-date-row" style="margin-top:5px;">
-                      <input type="date" id="sbFilterFrom" class="analyse-pf-input">
-                      <input type="date" id="sbFilterTo" class="analyse-pf-input">
+                      <input type="date" id="sbFilterFrom" class="analyse-pf-input" onchange="zeigeSBDiagramm()">
+                      <input type="date" id="sbFilterTo" class="analyse-pf-input" onchange="zeigeSBDiagramm()">
                     </div>
                   </div>
 
@@ -9800,18 +10381,12 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                       <img src="icons/score.png" width="14" height="14" style="object-fit:contain;opacity:0.75;vertical-align:middle;flex-shrink:0;cursor:default;" title="Nur für Score-Disziplinen verfügbar" alt="Score">
                     </label>
                     <div id="sbVergleichsDisziplinContainer" style="display:none;margin-top:4px;">
-                      <select id="sbVergleichsDisziplin" class="analyse-pf-input">
+                      <select id="sbVergleichsDisziplin" class="analyse-pf-input" onchange="zeigeSBDiagramm()">
                         <option value="">– Disziplin –</option>
                       </select>
                     </div>
                   </div>
 
-                  <div class="analyse-pf-actions">
-                    <button id="sbDiagrammAnzeigenBtn" onclick="zeigeSBDiagramm()">SB-Diagramm anzeigen</button>
-                    <button id="sbDiagrammAktualisierenBtn" onclick="zeigeSBDiagramm()" style="display:none;"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5"/></svg> Aktualisieren</button>
-                    <button id="sbDiagrammSchließenBtn" onclick="schließeSBDiagramm()" style="display:none;">Einklappen</button>
-                    <button id="sbDiagrammAusklappenBtn" onclick="klappeAusSBDiagramm()" style="display:none;">Ausklappen</button>
-                  </div>
                 </div>
 
                 <!-- Chart rechts -->
@@ -10054,21 +10629,29 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
               <div class="statistik-buttons-grid">
                 <button class="statistik-btn bestleistungen-btn-gold" onclick="zeigePBs()">
                   <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 21 12 21 16 21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 4H4a1 1 0 0 0-1 1v3a5 5 0 0 0 5 5"/><path d="M17 4h3a1 1 0 0 1 1 1v3a5 5 0 0 0-5 5"/><path d="M7 4h10v8a5 5 0 0 1-10 0V4z"/></svg></div>
-                  <div class="statistik-btn-text">PBs</div>
+                  <div class="statistik-btn-text">Persönliche Bestleistungen</div>
                 </button>
-                <button class="statistik-btn bestleistungen-btn-blue" onclick="zeigeSBMenu()">
+                <button class="statistik-btn bestleistungen-btn-blue" onclick="zeigeSBsDirekt()">
                   <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
-                  <div class="statistik-btn-text">SBs</div>
+                  <div class="statistik-btn-text">Saisonbestleistungen</div>
                 </button>
                 <button class="statistik-btn bestleistungen-btn-green" onclick="zeigePBTimeline()">
                   <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg></div>
                   <div class="statistik-btn-text">PB-Timeline</div>
                 </button>
               </div>
-              <div id="bestleistungenAusgabe" style="margin-top: 20px;"></div>
+              <!-- Inline SB-Jahresauswahl (kein Popup) -->
+              <div id="sbInlineJahrWrap" style="display:none;margin-top:14px;padding:10px 14px;background:#f2f6fa;border:1px solid #dde6f5;border-radius:8px;">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                  <label style="font-size:0.85em;font-weight:600;color:#1e3a8a;white-space:nowrap;">Jahr:</label>
+                  <select id="sbJahrInline" onchange="_ladeSBsDirektNachJahr(this.value)" style="padding:5px 10px;border-radius:6px;border:1.5px solid #dde6f5;font-size:0.88em;color:#1e3a8a;background:white;cursor:pointer;font-weight:500;"></select>
+                </div>
+              </div>
+              <div id="bestleistungenAusgabe" style="margin-top: 14px;"></div>
             </div>
 
           </div><!-- /.analyse-content -->
+          <div class="analyse-sidebar-spacer" aria-hidden="true"></div>
         </div><!-- /.analyse-layout -->
       </div> <!-- Close analyseTab -->
 
@@ -10109,11 +10692,11 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           <!-- DETAIL VIEW -->
           <div id="wkDetailView" style="display:none;">
             <div style="margin-bottom:14px;">
-              <button id="wkBackBtn" onclick="wkZurueck()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:none;border:1.5px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:0.88em;color:#475569;font-weight:500;transition:background 0.15s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Zurück zur Liste
+              <button id="wkBackBtn" onclick="wkZurueck()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:none;border:1.5px solid rgba(255,255,255,0.5);border-radius:8px;cursor:pointer;font-size:0.88em;color:#ffffff;font-weight:600;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='none'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Zurück
               </button>
             </div>
-            <div id="wkDetailInfo" style="background:white;border:1px solid #e8eef5;border-radius:10px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);"></div>
+            <div id="wkDetailInfo" style="background:#f2f6fa;border:1px solid #dde6f5;border-radius:10px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);"></div>
             <div id="wkDetailLeistungen" style="background:#f2f6fa;border-radius:10px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,0.08);border:1px solid #e8eef5;"></div>
           </div>
 
@@ -10254,8 +10837,10 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             display: grid; grid-template-columns: 1fr auto 1fr;
             align-items: center;
             gap: 12px; margin-bottom: 12px;
-            background: #ffffff;
-            padding: 10px 4px; border-bottom: 1px solid #e8eef5;
+            background: rgba(14, 24, 42, 0.94);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 10px 4px; border-bottom: 1px solid rgba(255,255,255,0.12);
           }
           body.dark-mode #kalenderTab .kal-toolbar {
             background: #1e293b; border-bottom-color: #334155;
@@ -10283,7 +10868,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             background: #1e3a8a; color: white; border-color: #1e3a8a;
           }
           #kalenderTab .kal-legend {
-            display: flex; align-items: center; gap: 12px; font-size: 0.82em; color: #555;
+            display: flex; align-items: center; gap: 12px; font-size: 0.82em; color: rgba(255,255,255,0.88);
           }
           #kalenderTab .kal-legend-item { display: flex; align-items: center; gap: 6px; }
           #kalenderTab .kal-legend-dots-wrap { display: flex; gap: 2px; }
@@ -10299,8 +10884,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             display: flex; flex-direction: column;
           }
           #kalenderTab .kal-wrap {
-            background: #f2f6fa; border-radius: 10px; padding: 14px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08); border: 1px solid #e8eef5;
+            background: transparent; border-radius: 10px; padding: 14px;
             flex: 1; display: flex; flex-direction: column; min-height: 0;
           }
 
@@ -10327,7 +10911,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             border-color: #1e3a8a; box-shadow: 0 2px 8px rgba(30,58,138,0.12);
           }
           #kalenderTab .kal-day.kal-day-out { background: #f8fafc; color: #cbd5e1; opacity: 0.55; }
-          #kalenderTab .kal-day.kal-day-today { border-color: #1e3a8a; border-width: 2px; background: #eef4ff; }
+          #kalenderTab .kal-day.kal-day-today { border-color: #1e3a8a; border-width: 2.5px; background: #dbeafe; box-shadow: 0 0 0 3px rgba(30,58,138,0.18), 0 2px 8px rgba(30,58,138,0.15); }
           #kalenderTab .kal-day.drag-over {
             background: #eef4ff; border-color: #1e3a8a;
             box-shadow: inset 0 0 0 2px #1e3a8a;
@@ -10357,28 +10941,29 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           }
           #kalenderTab .kal-week-row { display: flex; flex-direction: column; gap: 6px; }
           #kalenderTab .kal-week-label {
-            font-size: 0.78em; font-weight: 600; color: #64748b;
+            font-size: 0.78em; font-weight: 600; color: rgba(255,255,255,0.65);
             text-transform: uppercase; letter-spacing: 0.4px;
             padding: 0 2px;
           }
-          #kalenderTab .kal-week-row.current-week .kal-week-label { color: #1e3a8a; }
+          #kalenderTab .kal-week-row.current-week .kal-week-label { color: #93c5fd; }
           #kalenderTab .kal-load-more {
-            background: white; border: 1.5px dashed #cbd5e1; border-radius: 8px;
-            padding: 8px 16px; cursor: pointer; color: #64748b; font-size: 0.85em;
+            background: rgba(255,255,255,0.12); border: 1.5px dashed rgba(255,255,255,0.3); border-radius: 8px;
+            padding: 8px 16px; cursor: pointer; color: rgba(255,255,255,0.82); font-size: 0.85em;
             font-weight: 600; transition: all 0.15s; align-self: center;
           }
           #kalenderTab .kal-load-more:hover {
-            background: #eef4ff; border-color: #1e3a8a; color: #1e3a8a;
+            background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.5); color: #ffffff;
           }
           #kalenderTab .kal-week-cols {
             display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
           }
           #kalenderTab .kal-wc {
             background: white; border: 1px solid #e2e8f0; border-radius: 10px;
-            min-height: 160px; display: flex; flex-direction: column;
+            height: 160px; display: flex; flex-direction: column;
             transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+            overflow: hidden;
           }
-          #kalenderTab .kal-wc.today { border-color: #1e3a8a; border-width: 2px; background: #eef4ff; }
+          #kalenderTab .kal-wc.today { border-color: #1e3a8a; border-width: 2.5px; background: #dbeafe; box-shadow: 0 0 0 3px rgba(30,58,138,0.18), 0 2px 8px rgba(30,58,138,0.15); }
           #kalenderTab .kal-wc.drag-over {
             background: #eef4ff; border-color: #1e3a8a;
             box-shadow: inset 0 0 0 2px #1e3a8a;
@@ -10414,6 +10999,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           }
           #kalenderTab .kal-wc-body {
             flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 5px;
+            overflow: hidden; min-height: 0;
           }
           #kalenderTab .kal-wc-evt,
           #dayModal .kal-wc-evt {
@@ -10434,6 +11020,14 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           #kalenderTab .kal-wc-evt-desc {
             font-size: 0.85em; opacity: 0.75; margin-top: 2px;
             white-space: normal; word-break: break-word; line-height: 1.3;
+          }
+          #kalenderTab .kal-wc-wk-leistungen {
+            display: flex; flex-direction: column; gap: 2px; margin-top: 4px;
+          }
+          #kalenderTab .kal-wc-wk-leist {
+            font-size: 0.78em; opacity: 0.72; line-height: 1.25;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            display: block;
           }
           #kalenderTab .kal-wc-evt-meta,
           #dayModal .kal-wc-evt-meta {
@@ -10620,9 +11214,9 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
       <!-- Floating Heute-Button (unten rechts im Kalender) -->
       <button id="kalTodayFloat" onclick="kalToday()"
         style="position:fixed; bottom:56px; right:28px; z-index:50;
-               background:#1e3a8a; color:white; border:none; border-radius:24px;
-               padding:10px 22px; font-size:0.9em; font-weight:600; cursor:pointer;
-               box-shadow:0 4px 16px rgba(30,58,138,0.35); letter-spacing:0.02em;
+               background:#1e3a8a; color:white; border:2px solid #ffffff; border-radius:28px;
+               padding:14px 32px; font-size:1.05em; font-weight:700; cursor:pointer;
+               box-shadow:0 4px 20px rgba(30,58,138,0.45); letter-spacing:0.03em;
                transition:opacity 0.15s;"
         onmouseover="this.style.opacity='0.85'"
         onmouseout="this.style.opacity='1'">
@@ -10635,7 +11229,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
     <!-- Footer -->
     <footer id="appFooter" class="app-footer">
-      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.2.2</span></span>
+      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.3.0</span></span>
       <nav style="display:flex; gap:14px;">
         <a href="impressum.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Impressum</a>
         <a href="datenschutz.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Datenschutz</a>
@@ -10648,22 +11242,22 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
 <!-- FAB: Wettkampf erstellen (Wettkaempfe-Tab, Listenansicht) -->
 <button id="wkFab" onclick="openWettkampfFormModal()" style="display:none; position:fixed; bottom:56px; right:28px; z-index:50;
-  background:#1e3a8a; color:white; border:none; border-radius:28px;
-  padding:14px 26px; font-size:1em; font-weight:600; cursor:pointer;
-  box-shadow:0 6px 20px rgba(30,58,138,0.4); letter-spacing:0.02em;
-  align-items:center; gap:9px; transition:opacity 0.15s;"
-  onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+  background:#ffffff; color:#1e3a8a; border:2.5px solid #1e3a8a; border-radius:28px;
+  padding:14px 26px; font-size:1em; font-weight:700; cursor:pointer;
+  box-shadow:0 6px 24px rgba(0,0,0,0.35); letter-spacing:0.02em;
+  align-items:center; gap:9px; transition:box-shadow 0.15s, transform 0.15s;"
+  onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 30px rgba(0,0,0,0.4)'" onmouseout="this.style.transform='';this.style.boxShadow='0 6px 24px rgba(0,0,0,0.35)'">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
   Wettkampf
 </button>
 
 <!-- FAB: Leistung hinzufügen (Leistungen-Tab) -->
 <button id="leistungFab" onclick="openLeistungWettkampfPicker()" style="display:none; position:fixed; bottom:56px; right:28px; z-index:50;
-  background:#1e3a8a; color:white; border:none; border-radius:28px;
-  padding:14px 26px; font-size:1em; font-weight:600; cursor:pointer;
-  box-shadow:0 6px 20px rgba(30,58,138,0.4); letter-spacing:0.02em;
-  align-items:center; gap:9px; transition:opacity 0.15s;"
-  onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+  background:#ffffff; color:#1e3a8a; border:2.5px solid #1e3a8a; border-radius:28px;
+  padding:14px 26px; font-size:1em; font-weight:700; cursor:pointer;
+  box-shadow:0 6px 24px rgba(0,0,0,0.35); letter-spacing:0.02em;
+  align-items:center; gap:9px; transition:box-shadow 0.15s, transform 0.15s;"
+  onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 30px rgba(0,0,0,0.4)'" onmouseout="this.style.transform='';this.style.boxShadow='0 6px 24px rgba(0,0,0,0.35)'">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
   Leistung
 </button>
@@ -11425,7 +12019,7 @@ URL Hash: ${window.location.hash || 'Leer'}
     document.body.appendChild(debugBtn);
   });
 }
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({ tab: window._currentAppTab || 'dashboard' }, document.title, window.location.pathname);
     }, 2000);
   }
 });
@@ -13755,8 +14349,10 @@ function sortiereNachDisziplinTyp(a, b) {
 
 /* ================= PBS ANZEIGEN ================= */
 async function zeigePBs() {
-  // Verstecke Export-Buttons zunächst
-  
+  // Inline SB-Jahresselektor verstecken wenn PBs angezeigt werden
+  const sbWrap = document.getElementById('sbInlineJahrWrap');
+  if (sbWrap) sbWrap.style.display = 'none';
+
   if (!selectedAthleteId) {
     alert('Bitte wählen Sie zuerst einen Athleten aus!');
     return;
@@ -14041,16 +14637,58 @@ function setSortPBsSBs(spalte) {
 function zeigeSBMenu() {
   // Prüfe welcher Tab aktiv ist
   const istAnalyseTabAktiv = document.getElementById('analyseTab').classList.contains('active');
-  const athletId = istAnalyseTabAktiv ? 
-    selectedAthleteId : 
+  const athletId = istAnalyseTabAktiv ?
+    selectedAthleteId :
     selectedAthleteId;
-  
+
   if(!athletId) {
     alert('Bitte zuerst einen Athleten auswählen!');
     return;
   }
-  
+
   zeigeSBDialog();
+}
+
+// Direkte SB-Anzeige mit inline Jahr-Selektor (kein Popup)
+// Standard: alle Jahre anzeigen, Jahr-Filter optional
+function zeigeSBsDirekt(vorausgewaehltesJahr) {
+  if (!selectedAthleteId) {
+    alert('Bitte wählen Sie zuerst einen Athleten aus!');
+    return;
+  }
+  // Zeige & befülle inline Jahr-Selektor
+  const wrap = document.getElementById('sbInlineJahrWrap');
+  const select = document.getElementById('sbJahrInline');
+  if (wrap && select) {
+    // Standard: "Alle Jahre" vorausgewählt, außer explizit anderes Jahr übergeben
+    const aktJahr = vorausgewaehltesJahr || 'alle';
+    select.innerHTML = [
+      '<option value="alle">Alle Jahre</option>',
+      ...(verfuegbareJahre || []).map(j => `<option value="${j}">${j}</option>`)
+    ].join('');
+    select.value = String(aktJahr);
+    wrap.style.display = 'block';
+  }
+  _ladeSBsDirektNachJahr(select ? select.value : 'alle');
+}
+
+async function _ladeSBsDirektNachJahr(jahr) {
+  if (!selectedAthleteId) return;
+  if (jahr === 'alle') {
+    await zeigeAlleSBs();
+  } else {
+    // Hidden Dialog-Select erst mit Optionen befüllen, dann Wert setzen
+    // (Dialog wurde evtl. nie geöffnet → Select hat noch keine Options)
+    const hiddenSelect = document.getElementById('sbJahr');
+    if (hiddenSelect) {
+      if (hiddenSelect.options.length === 0) {
+        hiddenSelect.innerHTML = (verfuegbareJahre || [])
+          .map(j => `<option value="${j}">${j}</option>`).join('');
+      }
+      hiddenSelect.value = String(jahr);
+    }
+    await zeigeSBs();
+  }
 }
 
 function zeigeSBDialog() {
@@ -14131,21 +14769,21 @@ async function zeigeSBs() {
   // Hole erweiterte Filter (nur wenn im Analyse-Tab)
   if (istAnalyseTabAktiv) {
     const ort = document.getElementById("bestleistungenFilterOrt").value;
+    const disziplin = document.getElementById("bestleistungenFilterDisziplin").value;
     const wk = document.getElementById("bestleistungenFilterWK").value;
     const ak = document.getElementById("bestleistungenFilterAK").value;
     const filterTyp = document.getElementById("bestleistungenFilterTyp").value;
     const ms = document.getElementById("bestleistungenFilterMS").value;
 
-    
     // Erweiterte Filter anwenden
+    if (disziplin) query = query.ilike("disziplin", `%${disziplin}%`);
     if (ort) query = query.filter("wettkampf.ort", "ilike", `%${ort}%`);
     if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
     if (ak) query = query.ilike("ak", `%${ak}%`);
     if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
     if (ms) query = query.eq("ms", ms);
-
   }
-  
+
   const { data: rawData, error } = await query;
   
   if(error) {
@@ -14227,24 +14865,53 @@ async function zeigeAlleSBs() {
   
   // Schließe Dialog
   schliesseSBDialog();
-  
+
   // Lade alle Leistungen des Athleten
-  const { data, error } = await supabaseClient
+  const istAnalyseTabAktivAllSBs = document.getElementById('analyseTab').classList.contains('active');
+  let queryAllSBs = supabaseClient
     .schema("la").from("leistung")
     .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
     .eq("athlet_id", athletId)
-    .not("leistung", "is", null)
-  
+    .not("leistung", "is", null);
+
+  // Erweiterte Filter anwenden (nur wenn im Analyse-Tab)
+  if (istAnalyseTabAktivAllSBs) {
+    const ort = document.getElementById("bestleistungenFilterOrt").value;
+    const disziplin = document.getElementById("bestleistungenFilterDisziplin").value;
+    const wk = document.getElementById("bestleistungenFilterWK").value;
+    const ak = document.getElementById("bestleistungenFilterAK").value;
+    const filterTyp = document.getElementById("bestleistungenFilterTyp").value;
+    const ms = document.getElementById("bestleistungenFilterMS").value;
+    const filterZeitraum = document.getElementById("bestleistungenFilterZeitraum").value;
+
+    if (disziplin) queryAllSBs = queryAllSBs.ilike("disziplin", `%${disziplin}%`);
+    if (ort) queryAllSBs = queryAllSBs.filter("wettkampf.ort", "ilike", `%${ort}%`);
+    if (wk) queryAllSBs = queryAllSBs.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
+    if (ak) queryAllSBs = queryAllSBs.ilike("ak", `%${ak}%`);
+    if (filterTyp) queryAllSBs = queryAllSBs.eq("wettkampf.saison", filterTyp);
+    if (ms) queryAllSBs = queryAllSBs.eq("ms", ms);
+    if (filterZeitraum === 'custom') {
+      const von = document.getElementById("bestleistungenFilterVon").value;
+      const bis = document.getElementById("bestleistungenFilterBis").value;
+      if (von) queryAllSBs = queryAllSBs.gte("wettkampf.startdatum", von);
+      if (bis) queryAllSBs = queryAllSBs.lte("wettkampf.startdatum", bis);
+    } else if (filterZeitraum) {
+      queryAllSBs = queryAllSBs.gte("wettkampf.startdatum", `${filterZeitraum}-01-01`).lte("wettkampf.startdatum", `${filterZeitraum}-12-31`);
+    }
+  }
+
+  const { data, error } = await queryAllSBs;
+
   if(error) {
     alert(`Fehler: ${error.message}`);
     return;
   }
-  
+
   if(!data || data.length === 0) {
     alert('Keine Leistungen für diesen Athleten gefunden');
     return;
   }
-  
+
   // Gruppiere nach Jahr + Disziplin
   const jahrDisziplinMap = {};
   
@@ -14458,6 +15125,12 @@ async function ladeDashboardDaten() {
 
   // Statistiken berechnen
   document.getElementById('statTotalLeistungen').textContent = data.length;
+  const _now = new Date();
+  const _thisMonth = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}`;
+  const _thisYear  = String(_now.getFullYear());
+  const _leistMonat = data.filter(d => (d.wettkampf?.startdatum||'').startsWith(_thisMonth)).length;
+  const _subL = document.getElementById('statLeistungenSub');
+  if (_subL) _subL.textContent = _leistMonat > 0 ? `+${_leistMonat} diesen Monat` : 'Gesamt';
   
   // Speichere alle Leistungen für das Wettkämpfe-Popup
   letzteWettkaempfeData = [...data].sort((a, b) => new Date(b.wettkampf?.startdatum||0) - new Date(a.wettkampf?.startdatum||0));
@@ -14469,6 +15142,9 @@ async function ladeDashboardDaten() {
   const uniqueDisziplinen = Object.keys(disziplinCounts);
   window.aktuelleUniqueDisziplinen = uniqueDisziplinen;
   document.getElementById('statTotalDisziplinen').textContent = uniqueDisziplinen.length;
+  const _topDisz = [...uniqueDisziplinen].sort((a,b)=>(disziplinCounts[b]||0)-(disziplinCounts[a]||0))[0];
+  const _subD = document.getElementById('statDisziplinenSub');
+  if (_subD) _subD.textContent = _topDisz ? `Top: ${_topDisz}` : '';
 
   // Aktiv seit (frühestes Datum finden)
   const allDates = data.map(d => new Date(d.wettkampf?.startdatum||0)).filter(d => d.getFullYear() > 1970);
@@ -14476,6 +15152,9 @@ async function ladeDashboardDaten() {
   const latestDate = new Date(Math.max(...allDates));
   const firstYear = earliestDate.getFullYear();
   document.getElementById('statCurrentYear').textContent = firstYear;
+  const _yearsActive = _now.getFullYear() - firstYear;
+  const _subA = document.getElementById('statActiveSub');
+  if (_subA) _subA.textContent = _yearsActive > 0 ? `${_yearsActive} Jahre aktiv` : 'Erstes Jahr';
   // Frühesten Wettkampf global speichern
   const earliestLeistung = data.reduce((prev, curr) => (new Date(curr.wettkampf?.startdatum||0)) < (new Date(prev.wettkampf?.startdatum||0)) ? curr : prev);
   window.ersterWettkampf = earliestLeistung;
@@ -14536,8 +15215,15 @@ async function ladeDashboardDaten() {
   // Array mit PBs erstellen
   let pbs = Object.values(pbMap);
 
-  // Wettkämpfe zählen (distinct wettkampf_id)
-  document.getElementById('statTotalWettkaempfe').textContent = zähleWettkämpfe(data);
+  // Wettkämpfe zählen — direkt aus der wettkampf-Tabelle
+  document.getElementById('statTotalWettkaempfe').textContent =
+    (typeof wettkaempfeDaten !== 'undefined'
+      ? wettkaempfeDaten.filter(w => new Date(w.enddatum || w.startdatum) < new Date()).length
+      : zähleWettkämpfe(data));
+  const _wkJahr = (typeof wettkaempfeDaten !== 'undefined' ? wettkaempfeDaten : [])
+    .filter(w => (w.startdatum||'').startsWith(_thisYear)).length;
+  const _subW = document.getElementById('statWettkaempfeSub');
+  if (_subW) _subW.textContent = _wkJahr > 0 ? `${_wkJahr} dieses Jahr` : 'Gesamt';
 
   // Aktualisiere Wettkampforte-Karte
   updateWettkampforteMap(data);
@@ -14583,6 +15269,9 @@ async function ladeDashboardDaten() {
 
   const innerTabsEl = document.getElementById('dashInnerTabs');
   if (innerTabsEl) innerTabsEl.style.display = 'block';
+  const threeColEl = document.getElementById('dashThreeCol');
+  if (threeColEl && threeColEl.style.display === 'none') threeColEl.style.display = 'grid';
+  renderDashSidePanels();
 
   console.log('Dashboard geladen mit', topPBs.length, 'Bestleistungen');
 
@@ -14759,9 +15448,11 @@ function renderDisziplinCharts(data) {
 
 // Dashboard inner tab switching
 let _activeDashTab = 'entwicklung';
+// PBs sort mode: 'disziplin' (default) or 'score' (Top-Bestleistungen)
+let _dashPBSortMode = 'disziplin';
 function switchDashTab(tabName) {
   _activeDashTab = tabName;
-  const panes = { entwicklung: 'dashPaneEntwicklung', bestleistungen: 'dashPaneBestleistungen', karte: 'dashPaneKarte' };
+  const panes = { entwicklung: 'dashPaneEntwicklung', karte: 'dashPaneKarte' };
   Object.entries(panes).forEach(([key, id]) => {
     const el = document.getElementById(id);
     if (el) el.style.display = key === tabName ? 'block' : 'none';
@@ -14808,6 +15499,15 @@ function openDisziplinenPopup() {
 
   popup.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+}
+
+function openErsterWettkampf() {
+  const erste = window.ersterWettkampf;
+  if (!erste) return;
+  const wkId = erste.wettkampf_id || (erste.wettkampf && erste.wettkampf.id);
+  if (!wkId) return;
+  switchTab('wettkaempfe');
+  setTimeout(() => zeigeWettkampfDetail(wkId), 80);
 }
 
 function openAktivSeitPopup() {
@@ -14882,7 +15582,17 @@ function switchTabToBestleistungen() {
 
 function switchTab(tabName) {
   console.log('=== SWITCH TAB:', tabName, '===');
-  
+
+  // Vorherigen Tab merken + Browser-History pflegen
+  window._previousAppTab = window._currentAppTab || 'dashboard';
+  window._currentAppTab = tabName;
+  // Nur pushState wenn kein programmatischer Skip (z.B. vom popstate-Handler)
+  // und nicht beim _fromKalender-Sprung zum wettkaempfe-Tab (dort übernimmt zeigeWettkampfDetail)
+  if (!window._skipHistoryPush && !(tabName === 'wettkaempfe' && window._fromKalender)) {
+    history.pushState({ tab: tabName }, '', '');
+  }
+  window._skipHistoryPush = false;
+
   // Verstecke alle Tabs
   const allTabs = document.querySelectorAll('.tab-content');
   allTabs.forEach(tab => {
@@ -15315,7 +16025,9 @@ async function zeigeDiagramm() {
     const disziplin = document.getElementById("analyseDisziplin").value;
     
     if (!disziplin) {
-        alert("Bitte Disziplin angeben");
+        document.getElementById('diagrammContainer').innerHTML =
+          '<p style="color:#94a3b8;text-align:center;padding:40px 0;font-size:0.95em;">Bitte eine Disziplin wählen</p>';
+        document.getElementById('leistungsentwicklungTable').style.display = 'none';
         return;
     }
 
@@ -15574,13 +16286,8 @@ if (jahr) {
         }
     }
 
-    // Container und Schließen-Button anzeigen, Button-Text ändern
-    document.getElementById("diagrammContainer").style.display = "block";
-    document.getElementById("diagrammSchließenBtn").style.display = "inline-block";
-    document.getElementById("diagrammAusklappenBtn").style.display = "none";
-    document.getElementById("diagrammAnzeigenBtn").textContent = "Diagramm aktualisieren";
-    
     const canvas = document.getElementById('leistungsChart');
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
     // WICHTIG: Altes Chart komplett zerstören
@@ -16134,26 +16841,18 @@ if (jahr) {
         }
     });
     
-    // Zeige Diagramm-Container und passe Buttons an
-    document.getElementById('diagrammContainer').style.display = 'block';
-    document.getElementById('diagrammAnzeigenBtn').style.display = 'none';
-    document.getElementById('diagrammSchließenBtn').style.display = 'inline-block';
-    
     // Erstelle Tabelle mit allen Leistungen der ausgewählten Disziplin
     createLeistungsentwicklungTable(
       disziplin, chartData1,
       vergleichsModus && vergleichsDisziplin ? vergleichsDisziplin : null,
       vergleichsModus && vergleichsDisziplin && data2 && data2.length > 0 ? chartData2 : null
     );
-    document.getElementById('diagrammAusklappenBtn').style.display = 'none';
 }
 
 /* ================= VERGLEICHSMODUS TOGGLE ================= */
 function toggleVergleichsModus() {
     const checkbox = document.getElementById('vergleichsModus');
     const container = document.getElementById('vergleichsDisziplinContainer');
-    const diagrammBtn = document.getElementById('diagrammAnzeigenBtn');
-    const diagrammSichtbar = document.getElementById('diagrammContainer').style.display === 'block';
     const analyseDisziplinSelect = document.getElementById('analyseDisziplin');
 
     if (checkbox.checked) {
@@ -16167,9 +16866,6 @@ function toggleVergleichsModus() {
                 analyseDisziplinSelect.value = aktuellerWert;
             }
         }
-        if (diagrammSichtbar) {
-            diagrammBtn.textContent = 'Diagramm aktualisieren';
-        }
     } else {
         container.style.display = 'none';
         document.getElementById('vergleichsDisziplin').value = '';
@@ -16181,10 +16877,8 @@ function toggleVergleichsModus() {
                 analyseDisziplinSelect.value = aktuellerWert;
             }
         }
-        if (diagrammSichtbar) {
-            diagrammBtn.textContent = 'Diagramm aktualisieren';
-        }
     }
+    zeigeDiagramm();
 }
 
 /* ================= DIAGRAMM SCHLIESSEN ================= */
@@ -16221,7 +16915,8 @@ async function zeigeSBDiagramm() {
     const disziplin = document.getElementById("sbDisziplin").value;
     
     if (!disziplin) {
-        alert("Bitte Disziplin angeben");
+        const c = document.getElementById('sbDiagrammContainer');
+        if (c) c.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:40px 0;font-size:0.95em;">Bitte eine Disziplin wählen</p>';
         return;
     }
 
@@ -16779,12 +17474,9 @@ async function zeigeSBDiagramm() {
         }
     });
 
-    // Zeige Container und passe Buttons an
+    // Zeige Options-Container (Checkboxen) und befülle Tabelle
     document.getElementById('sbDiagrammContainer').style.display = 'block';
     document.getElementById('sbDiagrammOptionsContainer').style.display = 'block';
-    document.getElementById('sbDiagrammAnzeigenBtn').style.display = 'none';
-    document.getElementById('sbDiagrammAktualisierenBtn').style.display = 'inline-block';
-    document.getElementById('sbDiagrammSchließenBtn').style.display = 'inline-block';
     // Tabelle unterhalb des Diagramms befüllen
     createSBTable(
       disziplin, werte1.sbWerte, werte1.durchschnittsWerte,
@@ -16814,8 +17506,6 @@ function klappeAusSBDiagramm() {
 function toggleSBVergleichsModus() {
     const checkbox = document.getElementById('sbVergleichsModus');
     const container = document.getElementById('sbVergleichsDisziplinContainer');
-    const diagrammBtn = document.getElementById('sbDiagrammAnzeigenBtn');
-    const diagrammSichtbar = document.getElementById('sbDiagrammContainer').style.display === 'block';
     const sbDisziplinSelect = document.getElementById('sbDisziplin');
 
     if (checkbox.checked) {
@@ -16829,9 +17519,6 @@ function toggleSBVergleichsModus() {
                 sbDisziplinSelect.value = aktuellerWert;
             }
         }
-        if (diagrammSichtbar) {
-            diagrammBtn.textContent = 'SB-Diagramm aktualisieren';
-        }
     } else {
         container.style.display = 'none';
         document.getElementById('sbVergleichsDisziplin').value = '';
@@ -16843,11 +17530,8 @@ function toggleSBVergleichsModus() {
                 sbDisziplinSelect.value = aktuellerWert;
             }
         }
-        // Button-Text zurücksetzen wenn Diagramm sichtbar
-        if (diagrammSichtbar) {
-            diagrammBtn.textContent = 'SB-Diagramm aktualisieren';
-        }
     }
+    zeigeSBDiagramm();
 }
 
 /* ================= ERWEITERTE FILTER ZURÜCKSETZEN ================= */
@@ -17514,7 +18198,7 @@ const MAP_TILE_LAYERS = {
 };
 
 // User-Präferenz: aus localStorage laden, Standard = 'positron'
-let _userMapStyle = localStorage.getItem('mapStyle') || 'positron';
+let _userMapStyle = localStorage.getItem('mapStyle') || 'osm';
 
 function setMapLayer(name) {
   const cfg = MAP_TILE_LAYERS[name] || MAP_TILE_LAYERS.osm;
@@ -17535,7 +18219,8 @@ function syncMapLayerToDarkMode() {
   // Nur anwenden wenn kein expliziter Stil gesetzt wurde
   if (!localStorage.getItem('mapStyle')) {
     const isDark = document.body.classList.contains('dark-mode');
-    setMapLayer(isDark ? 'dark' : 'positron');
+    _userMapStyle = isDark ? 'dark' : 'osm';
+    setMapLayer(_userMapStyle);
   }
 }
 
@@ -17760,6 +18445,8 @@ async function updateWettkampforteMap(leistungen) {
       _wettkampfLeafletMap.fitBounds(lBounds, { padding: [40, 40], maxZoom: 13 });
     } catch(e) { /* ignore */ }
   }
+  // Mini-Karte im Dashboard aktualisieren
+  if (typeof renderDashMiniMap === 'function') renderDashMiniMap(bounds);
 }
 
 
@@ -17957,8 +18644,8 @@ function hideOrtLeistungen() {
     }
 
     .detail-popup-header {
-      background: linear-gradient(135deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
-      color: white;
+      background: #1e3a8a;
+      color: #ffffff;
       padding: 25px 30px;
       border-radius: var(--border-radius) var(--border-radius) 0 0;
       display: flex;
@@ -17968,14 +18655,14 @@ function hideOrtLeistungen() {
 
     .detail-popup-header h2 {
       margin: 0;
-      color: navy;
+      color: #ffffff;
       font-size: 1.2em;
     }
 
     .detail-popup-close {
-      background: white;
-      border: 2px solid navy;
-      color: navy;
+      background: #ffffff;
+      border: 2px solid rgba(255,255,255,0.5);
+      color: #1e3a8a;
       font-size: 1.5em;
       cursor: pointer;
       padding: 0;
@@ -17991,7 +18678,7 @@ function hideOrtLeistungen() {
     }
 
     .detail-popup-close:hover {
-      background: #e8eef8;
+      background: rgba(255,255,255,0.28);
     }
 
 
@@ -18329,20 +19016,20 @@ function hideOrtLeistungen() {
     gap: 10px;
   }
   .ort-popup-pin-icon {
-    color: navy;
+    color: #ffffff;
     flex-shrink: 0;
     display: flex; align-items: center;
   }
   .ort-popup-title {
     font-size: 1.4em;
     font-weight: 700;
-    color: navy;
+    color: #ffffff;
     margin: 0;
   }
   .ort-popup-header-meta {
     font-size: 0.82em;
-    color: navy;
-    opacity: 0.75;
+    color: #ffffff;
+    opacity: 0.85;
     margin-top: 1px;
   }
   .ort-popup-edit-btn {
@@ -20640,6 +21327,16 @@ function switchAnalyseSection(section) {
   if (activeBtn) activeBtn.classList.add('active');
   const activeSection = document.getElementById(`analyseSection-${section}`);
   if (activeSection) activeSection.style.display = 'block';
+  // Diagramm automatisch laden
+  if (section === 'entwicklungen') zeigeDiagramm();
+  if (section === 'sb') {
+    // Wenn keine Disziplin gewählt, erste verfügbare automatisch auswählen
+    const sbSel = document.getElementById('sbDisziplin');
+    if (sbSel && !sbSel.value && sbSel.options.length > 1) {
+      sbSel.value = sbSel.options[1].value; // Index 0 = Platzhalter "– Disziplin wählen –"
+    }
+    zeigeSBDiagramm();
+  }
 }
 
 // Legacy-Alias für etwaige externe Aufrufe
@@ -21888,12 +22585,19 @@ function renderDashboardWeekStrip() {
   // Nur zeigen, wenn ein Athlet aktiv ist (sonst Strip ausblenden)
   const aid = (typeof getActiveAthleteId === 'function') ? getActiveAthleteId() : null;
   const innerTabs = document.getElementById('dashInnerTabs');
+  const calCard = document.getElementById('dashCalendarCard');
+  const threeCol = document.getElementById('dashThreeCol');
   if (!aid) {
     wrap.style.display = 'none';
     if (innerTabs) innerTabs.style.display = 'none';
+    if (calCard) calCard.style.display = 'none';
+    if (threeCol) threeCol.style.display = 'none';
     return;
   }
   wrap.style.display = 'block';
+  if (calCard) calCard.style.display = 'block';
+  if (threeCol) threeCol.style.display = 'grid';
+  renderDashSidePanels();
 
   const today = new Date();
   const todayIso = isoDate(today);
@@ -21939,6 +22643,247 @@ function renderDashboardWeekStrip() {
     </div>`;
   }
   grid.innerHTML = html;
+  renderDashWkCards();
+}
+
+function renderDashWkCards() {
+  const row = document.getElementById('dashWkRow');
+  if (!row) return;
+  const wkData = (typeof wettkaempfeDaten !== 'undefined') ? wettkaempfeDaten : [];
+  if (!wkData.length) { row.style.display = 'none'; return; }
+  const today = isoDate(new Date());
+  const past   = wkData.filter(w => (w.startdatum||'') <= today).sort((a,b) => b.startdatum.localeCompare(a.startdatum));
+  const future = wkData.filter(w => (w.startdatum||'') >  today).sort((a,b) => a.startdatum.localeCompare(b.startdatum));
+  const last = past[0], next = future[0];
+  if (!last && !next) { row.style.display = 'none'; return; }
+
+  function fmt(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()}`;
+  }
+
+  function buildLeistungenHtml(wk) {
+    if (!wk || typeof alleLeistungenFuerPBs === 'undefined') return '';
+    const leist = alleLeistungenFuerPBs.filter(l => l.wettkampf_id === wk.id);
+    if (!leist.length) return '';
+    const rows = leist.slice(0, 4).map(l =>
+      `<div class="dash-wk-leist-row">
+        <span class="dash-wk-leist-disz">${escapeHtml(l.disziplin||'')}</span>
+        <span class="dash-wk-leist-val">${escapeHtml(formatiereLeistung(l.leistung, l.disziplin))}</span>
+      </div>`
+    ).join('');
+    return `<div class="dash-wk-leistungen">${rows}</div>`;
+  }
+
+  function wkCard(wk, badge, isNext) {
+    const extraClass = isNext ? ' dash-wk-next' : '';
+    if (!wk) {
+      return `<div class="dash-wk-item dash-wk-empty${extraClass}">
+        <div class="dash-wk-badge">${badge}</div>
+        <div class="dash-wk-meta" style="color:#cbd5e1;">–</div>
+      </div>`;
+    }
+    const ort = wk.ort_display || wk.ort || '';
+    const meta = [fmt(wk.startdatum), ort].filter(Boolean).join(' · ');
+    const leistHtml = isNext ? '' : buildLeistungenHtml(wk);
+    return `<div class="dash-wk-item${extraClass}" onclick="if(typeof zeigeWettkampfDetail==='function')zeigeWettkampfDetail(${wk.id})">
+      <div class="dash-wk-badge">${badge}</div>
+      <div class="dash-wk-name">${escapeHtml(wk.bezeichnung||'Wettkampf')}</div>
+      <div class="dash-wk-meta">${escapeHtml(meta)}</div>
+      ${leistHtml}
+    </div>`;
+  }
+
+  row.innerHTML = wkCard(last, 'Letzter WK', false) + wkCard(next, 'Nächster WK', true);
+  row.style.display = 'grid';
+}
+
+// ── Dashboard Mini-Karte ──
+let _dashMiniLeafletMap = null;
+let _dashMiniMarkerLayer = null;
+
+function renderDashMiniMap(bounds) {
+  const container = document.getElementById('dashMiniMap');
+  if (!container || typeof L === 'undefined') return;
+
+  // Mini-Karte immer in Positron (unabhängig von Nutzereinstellung)
+  const cfg = (typeof MAP_TILE_LAYERS !== 'undefined')
+    ? MAP_TILE_LAYERS.positron
+    : { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png' };
+
+  if (!_dashMiniLeafletMap) {
+    _dashMiniLeafletMap = L.map('dashMiniMap', {
+      center: [51.163375, 10.447683],
+      zoom: 5,
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      touchZoom: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
+      keyboard: false
+    });
+    L.tileLayer(cfg.url, { maxZoom: 19 }).addTo(_dashMiniLeafletMap);
+    _dashMiniMarkerLayer = L.layerGroup().addTo(_dashMiniLeafletMap);
+    // Click → Karte-Tab öffnen
+    _dashMiniLeafletMap.on('click', () => {
+      switchTab('dashboard');
+      setTimeout(() => switchDashTab('karte'), 80);
+    });
+  } else {
+    _dashMiniMarkerLayer.clearLayers();
+  }
+
+  if (!bounds || !bounds.length) return;
+
+  bounds.forEach(([lat, lon]) => {
+    L.circleMarker([lat, lon], {
+      radius: 4,
+      fillColor: '#1e3a8a',
+      color: '#ffffff',
+      weight: 1.5,
+      opacity: 1,
+      fillOpacity: 0.85
+    }).addTo(_dashMiniMarkerLayer);
+  });
+
+  try {
+    _dashMiniLeafletMap.fitBounds(L.latLngBounds(bounds), { padding: [10, 10], maxZoom: 8 });
+  } catch(e) {}
+
+  setTimeout(() => { if (_dashMiniLeafletMap) _dashMiniLeafletMap.invalidateSize(); }, 80);
+}
+
+// ── Seiten-Panels: Wettkämpfe (links) + Saisonbests (rechts) ──
+function renderDashSidePanels() {
+  renderDashLeftPanel();
+  renderDashRightPanel();
+}
+
+function renderDashLeftPanel() {
+  const pastEl   = document.getElementById('dashSidePastWk');
+  const futureEl = document.getElementById('dashSideFutureWk');
+  if (!pastEl || !futureEl) return;
+
+  const wkData = (typeof wettkaempfeDaten !== 'undefined') ? wettkaempfeDaten : [];
+  const today  = isoDate(new Date());
+
+  function fmtShort(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()}`;
+  }
+
+  function wkItem(wk, isFuture) {
+    const ort  = escapeHtml(wk.ort_display || wk.ort || '');
+    const name = escapeHtml(wk.bezeichnung || 'Wettkampf');
+    const date = fmtShort(wk.startdatum);
+    const cls  = isFuture ? ' dash-side-wk-future' : '';
+    return `<div class="dash-side-wk-item${cls}" onclick="switchTab('wettkaempfe');setTimeout(()=>zeigeWettkampfDetail(${wk.id}),80)">
+      <div class="dash-side-wk-date">${date}</div>
+      <div class="dash-side-wk-name">${name}</div>
+      ${ort ? `<div class="dash-side-wk-ort">${ort}</div>` : ''}
+    </div>`;
+  }
+
+  const past   = wkData.filter(w => (w.startdatum||'') <= today)
+                        .sort((a,b) => b.startdatum.localeCompare(a.startdatum))
+                        .slice(0, 5);
+  const future = wkData.filter(w => (w.startdatum||'') > today)
+                        .sort((a,b) => a.startdatum.localeCompare(b.startdatum))
+                        .slice(0, 3);
+
+  futureEl.innerHTML = future.length ? future.map(w => wkItem(w, true)).join('')  : '<div class="dash-side-empty">Keine kommenden Wettkämpfe</div>';
+  pastEl.innerHTML   = past.length   ? past.map(w   => wkItem(w, false)).join('') : '<div class="dash-side-empty">Keine vergangenen Wettkämpfe</div>';
+}
+
+function renderDashRightPanel() {
+  const sbEl   = document.getElementById('dashSideSBs');
+  const pbEl   = document.getElementById('dashSidePBs');
+  const yearEl = document.getElementById('dashSBYear');
+  if (!sbEl) return;
+
+  const data = (typeof alleLeistungenFuerPBs !== 'undefined') ? alleLeistungenFuerPBs : [];
+  if (!data.length) {
+    sbEl.innerHTML = '<div class="dash-side-empty">Keine Leistungen</div>';
+    if (pbEl) pbEl.innerHTML = '';
+    return;
+  }
+
+  const currentYear = String(new Date().getFullYear());
+  if (yearEl) yearEl.textContent = currentYear;
+
+  function istZeit(disz) {
+    const d = (disz||'').toLowerCase().replace(/\./g,'').trim();
+    return (d.match(/\d+\s*m/) && !d.includes('kampf')) || d.includes('lauf') || d.includes('hürd') || d.includes('x');
+  }
+
+  function buildMap(source) {
+    const map = {};
+    source.forEach(l => {
+      const disz = l.disziplin;
+      if (!disz) return;
+      const val = Number(l.leistung);
+      if (l.leistung === null || l.leistung === undefined || l.leistung === '' || isNaN(val) || val === 0) return;
+      if (!map[disz]) { map[disz] = l; return; }
+      const better = istZeit(disz) ? val < Number(map[disz].leistung) : val > Number(map[disz].leistung);
+      if (better) map[disz] = l;
+    });
+    return map;
+  }
+
+  function renderItems(entries) {
+    return entries.map(([disz, l]) => {
+      const val = formatiereLeistung(l.leistung, disz);
+      const leistJson = JSON.stringify({
+        id: l.id, disziplin: l.disziplin, leistung: l.leistung,
+        platzierung: l.platzierung, ak: l.ak, typ: l.typ,
+        notizen: l.notizen, wettkampf: l.wettkampf
+      }).replace(/'/g, '&apos;');
+      return `<div class="dash-side-sb-item" onclick='openDetailPopup(${leistJson})'>
+        <div class="dash-side-sb-left">
+          <div class="dash-side-sb-disz">${escapeHtml(disz)}</div>
+        </div>
+        <div class="dash-side-sb-val">${val}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Saisonbests (aktuelles Jahr)
+  const yearData = data.filter(l => (l.wettkampf?.startdatum || '').startsWith(currentYear));
+  const sbMap    = buildMap(yearData);
+  const _sortDisz = (a, b) => (typeof sortiereNachDisziplinTyp === 'function')
+    ? sortiereNachDisziplinTyp({disziplin: a[0]}, {disziplin: b[0]})
+    : a[0].localeCompare(b[0], 'de');
+  const sbEntries = Object.entries(sbMap).sort(_sortDisz);
+
+  sbEl.innerHTML = sbEntries.length
+    ? renderItems(sbEntries)
+    : `<div class="dash-side-empty">Keine Leistungen in ${currentYear}</div>`;
+
+  // Alltime PBs
+  if (pbEl) {
+    const pbMap = buildMap(data);
+    let pbEntries = Object.entries(pbMap);
+    if (_dashPBSortMode === 'score') {
+      // Sort by score descending (Top-Bestleistungen)
+      pbEntries.sort((a, b) => (b[1].score || 0) - (a[1].score || 0));
+    } else {
+      pbEntries.sort(_sortDisz);
+    }
+    pbEl.innerHTML = pbEntries.length
+      ? renderItems(pbEntries)
+      : '<div class="dash-side-empty">Keine PBs vorhanden</div>';
+  }
+}
+
+function setDashPBSort(mode) {
+  _dashPBSortMode = mode;
+  document.getElementById('dashPBSortDisz')?.classList.toggle('active', mode === 'disziplin');
+  document.getElementById('dashPBSortScore')?.classList.toggle('active', mode === 'score');
+  renderDashRightPanel();
 }
 
 // Pfeiltasten Links/Rechts wechseln Wochen, sobald Dashboard sichtbar ist
@@ -23307,10 +24252,13 @@ function zeigeWettkampfDetail(wkId) {
   // Back-Button-Text je nach Herkunft anpassen
   const _backBtn = document.getElementById('wkBackBtn');
   if (_backBtn) {
-    _backBtn.innerHTML = window._fromKalender
-      ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Zurück zum Kalender'
-      : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Zurück zur Liste';
+    _backBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Zurück';
   }
+  // History-Eintrag für Browser-Zurück-Button
+  if (!window._skipHistoryPush) {
+    history.pushState({ tab: 'wettkaempfe', view: 'detail', wkId: wkId }, '', '');
+  }
+  window._skipHistoryPush = false;
   if (!currentWettkampf) {
     // wettkaempfeDaten noch nicht geladen (z.B. Direktlink aus Leistungs-Popup) — nachladen und erneut versuchen
     if (typeof ladeWettkaempfe === 'function') {
@@ -23334,16 +24282,39 @@ function zeigeWettkampfDetail(wkId) {
   renderWettkampfDetail();
 }
 
-// Zurück-Navigation: Kalender oder Liste
+// Zurück-Navigation: geht zum vorherigen Tab zurück
 function wkZurueck() {
-  if (window._fromKalender) {
-    window._fromKalender = false;
+  const prevTab = window._previousAppTab;
+  window._fromKalender = false;
+  if (prevTab && prevTab !== 'wettkaempfe') {
     zeigeWettkampfListe();
-    switchTab('kalender');
+    switchTab(prevTab);
   } else {
     zeigeWettkampfListe();
   }
 }
+
+// Browser-Zurück-Button: Navigation innerhalb der App
+window.addEventListener('popstate', function(e) {
+  const state = e.state;
+  window._skipHistoryPush = true;
+  if (!state || !state.tab) {
+    switchTab('dashboard');
+    return;
+  }
+  if (state.view === 'detail' && state.tab === 'wettkaempfe') {
+    // Detailansicht wiederherstellen
+    switchTab('wettkaempfe');
+    setTimeout(function() {
+      if (typeof zeigeWettkampfDetail === 'function' && state.wkId) {
+        window._skipHistoryPush = true;
+        zeigeWettkampfDetail(state.wkId);
+      }
+    }, 80);
+  } else {
+    switchTab(state.tab);
+  }
+});
 
 // Zurück zur Wettkampf-Liste
 function zeigeWettkampfListe() {
@@ -23367,9 +24338,16 @@ async function renderWettkampfDetail() {
   const ortDisplay = wk.ort_display || wk.ort || null;
   const _googleAusschreibungUrl = (() => {
     if (!wk.bezeichnung) return '';
-    const jahr = wk.startdatum ? new Date(wk.startdatum).getFullYear() : '';
     const ortTeil = (wk.ort_display || wk.ort) ? (' ' + (wk.ort_display || wk.ort)) : '';
-    const q = encodeURIComponent((wk.bezeichnung + ortTeil + ' ' + jahr + ' Leichtathletik Ausschreibung').trim());
+    let datumTeil = '';
+    if (wk.startdatum) {
+      const d = new Date(wk.startdatum);
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const yyyy = d.getUTCFullYear();
+      datumTeil = ' ' + dd + '.' + mm + '.' + yyyy;
+    }
+    const q = encodeURIComponent((wk.bezeichnung + ortTeil + datumTeil + ' Leichtathletik Ausschreibung').trim());
     return 'https://www.google.com/search?q=' + q + '+ladv&btnI=1';
   })();
   infoEl.innerHTML = `
@@ -23893,8 +24871,18 @@ function renderWeekBlock(ws, today) {
     const evHtml  = dayEvs.map(ev => {
       const style = eventStyleAttr(ev);
       const safe  = escapeHtml(ev.title || (ev.type==='competition'?'Wettkampf':'Training'));
-      const descHtml = (!ev._isWettkampf && ev.description)
-        ? `<div class="kal-wc-evt-desc">${escapeHtml(ev.description).replace(/\n/g, '<br>')}</div>` : '';
+      let descHtml = '';
+      if (!ev._isWettkampf && ev.description) {
+        descHtml = `<div class="kal-wc-evt-desc">${escapeHtml(ev.description).replace(/\n/g, '<br>')}</div>`;
+      } else if (ev._isWettkampf && typeof alleLeistungenFuerPBs !== 'undefined') {
+        const wkLeistungen = alleLeistungenFuerPBs.filter(l => l.wettkampf_id === ev._wkId);
+        if (wkLeistungen.length > 0) {
+          const leistHtml = wkLeistungen.slice(0, 4).map(l =>
+            `<span class="kal-wc-wk-leist">${escapeHtml(l.disziplin)}&thinsp;·&thinsp;${escapeHtml(formatiereLeistung(l.leistung, l.disziplin))}</span>`
+          ).join('');
+          descHtml = `<div class="kal-wc-wk-leistungen">${leistHtml}</div>`;
+        }
+      }
       const removeBtn = ev._isWettkampf ? '' :
         `<button class="kal-evt-remove" onclick="event.stopPropagation();removeEventById('${ev.id}')" aria-label="Entfernen">&#215;</button>`;
       return `<div class="kal-wc-evt ${ev.type}" style="${style};position:relative;" draggable="${ev._isWettkampf ? 'false' : 'true'}" ${ev._isWettkampf ? '' : `ondragstart="kalEvtDragStart(event,'${ev.id}')"`} onclick="event.stopPropagation();openEventToEdit('${ev.id}')">
@@ -24229,9 +25217,10 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   .header-add-btn {
-    width: 36px !important;
-    height: 36px !important;
+    height: 34px !important;
+    padding: 0 10px 0 8px !important;
   }
+  .header-add-btn .header-add-plus { font-size: 1em !important; }
 
   .dark-mode-toggle {
     padding: 6px 10px !important;
@@ -24308,9 +25297,9 @@ document.addEventListener('DOMContentLoaded', function() {
   .analyse-sidebar {
     width: 100% !important;
     border-right: none !important;
-    border-bottom: 1px solid var(--border-color, #e2e8f0) !important;
+    border-bottom: 1px solid rgba(255,255,255,0.1) !important;
     padding: 8px 12px 0 !important;
-    background: var(--surface-elevated, #fff) !important;
+    background: transparent !important;
     position: sticky !important;
     top: 52px !important;
     z-index: 20 !important;
@@ -24345,8 +25334,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   .analyse-nav-item.active {
-    background: var(--primary-color, #1e3a8a) !important;
-    color: white !important;
+    background: #f2f6fa !important;
+    color: navy blue !important;
   }
 
   .analyse-content {
