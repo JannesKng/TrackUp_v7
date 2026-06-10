@@ -1,6 +1,6 @@
-<!-- Letzte Änderung: 2026-05-18 -->
+<!-- Letzte Änderung: 2026-06-10 13:50 -->
 <!DOCTYPE html>
-<!-- Letzte Änderung: 2026-05-18 -->
+<!-- Letzte Änderung: 2026-06-10 13:50 -->
 <html lang="de">
 <head>
 	<!-- Google tag (gtag.js) -->
@@ -236,9 +236,14 @@ function openDetailPopup(leistungData) {
 
   // Initialize map after a short delay to ensure the container is visible
   setTimeout(() => {
-    initDetailMap(leistungData.wettkampf?.ort_display || leistungData.wettkampf?.ort);
     initDetailChart(leistungData.disziplin, leistungData.id);
   }, 100);
+
+  // Geocode-Cache für die "Karte teilen"-Funktion füllen
+  _geocodeOrtFuerShare(leistungData.wettkampf?.ort_display || leistungData.wettkampf?.ort);
+
+  // Medien (Fotos & Videos) laden
+  ladeLeistungMedien(leistungData);
 }
 
 /* ================= STATUS-LOGIK ================= */
@@ -1428,6 +1433,449 @@ function closeLetzteWettkaempfe(event) {
   document.body.style.overflow = '';
 }
 
+/* ================= LEISTUNGS-MEDIEN (Fotos & Videos) ================= */
+const MEDIEN_BUCKET = 'leistung-medien';
+const MEDIEN_MAX_VIDEO_MB = 50;
+const MEDIEN_QUOTA_MB = 250;
+let _detailMedienLeistung = null;
+let _medienLeistungIds = new Set();  // Leistungen mit Medien (Kamera-Indikator)
+let _medienWettkampfIds = new Set(); // Wettkämpfe mit Medien (Kamera-Indikator)
+
+/** Summe der hochgeladenen Medien (Bytes) des Athleten */
+async function holeMedienSpeicher(athletId) {
+  const { data, error } = await supabaseClient.schema('la').from('leistung_medien')
+    .select('groesse_bytes').eq('athlet_id', athletId).not('groesse_bytes', 'is', null);
+  if (error) { console.error('Speicher abfragen fehlgeschlagen:', error); return null; }
+  return (data || []).reduce((sum, m) => sum + (m.groesse_bytes || 0), 0);
+}
+
+function _formatMB(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(1).replace('.', ',');
+}
+
+function _zeigeMedienSpeicherStatus(belegt) {
+  const status = document.getElementById('medienUploadStatus');
+  if (!status || belegt === null) return;
+  status.textContent = `${_formatMB(belegt)} MB von ${MEDIEN_QUOTA_MB} MB belegt`;
+}
+
+function _darfMedienBearbeiten(leistungData) {
+  const eigene = currentAthlete && leistungData.athlet_id === currentAthlete.id;
+  return !!(eigene || isAdmin);
+}
+
+async function ladeLeistungMedien(leistungData) {
+  _detailMedienLeistung = leistungData;
+  const grid = document.getElementById('detailMedienGrid');
+  const controls = document.getElementById('detailMedienControls');
+  if (!grid) return;
+  grid.innerHTML = '';
+  if (controls) controls.style.display = _darfMedienBearbeiten(leistungData) ? 'flex' : 'none';
+  if (!leistungData.id) return;
+
+  const { data, error } = await supabaseClient.schema('la').from('leistung_medien')
+    .select('*').eq('leistung_id', leistungData.id).order('created_at');
+  if (error) { console.error('Medien laden fehlgeschlagen:', error); return; }
+  if (!data || !data.length) return;
+
+  // Signed URLs für Storage-Dateien (Bucket ist privat)
+  const pfade = data.filter(m => m.pfad).map(m => m.pfad);
+  const urlMap = {};
+  if (pfade.length) {
+    const { data: signed, error: sErr } = await supabaseClient.storage
+      .from(MEDIEN_BUCKET).createSignedUrls(pfade, 3600);
+    if (!sErr && signed) signed.forEach(s => { if (s.signedUrl) urlMap[s.path] = s.signedUrl; });
+  }
+  const darf = _darfMedienBearbeiten(leistungData);
+  data.forEach(m => grid.appendChild(_baueMedienThumb(m, urlMap[m.pfad], darf)));
+}
+
+function _baueMedienThumb(m, url, darfLoeschen) {
+  const div = document.createElement('div');
+  div.className = 'medien-thumb';
+  let inhalt = '', badge = '';
+  if (m.typ === 'bild' && url) {
+    inhalt = `<img src="${url}" alt="" loading="lazy">`;
+  } else if (m.typ === 'video' && url) {
+    inhalt = `<video src="${url}#t=0.1" preload="metadata" muted playsinline></video>`;
+    badge = '<span class="medien-thumb-typ">Video</span>';
+  } else if (m.typ === 'link') {
+    const yt = _youtubeId(m.url);
+    inhalt = yt
+      ? `<img src="https://img.youtube.com/vi/${yt}/hqdefault.jpg" alt="" loading="lazy" onerror="this.onerror=null;this.src='https://img.youtube.com/vi/${yt}/mqdefault.jpg'">`
+      : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.5em;">🎬</div>';
+    badge = '<span class="medien-thumb-typ">Link</span>';
+  } else {
+    inhalt = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.3em;">⚠️</div>';
+  }
+  div.innerHTML = inhalt + badge +
+    (darfLoeschen ? '<button type="button" class="medien-thumb-del" title="Löschen">×</button>' : '');
+  div.addEventListener('click', e => {
+    if (e.target.classList.contains('medien-thumb-del')) { loescheMedium(m); return; }
+    if (m.typ === 'link') { window.open(m.url, '_blank', 'noopener'); return; }
+    if (url) openMedienLightbox(m.typ, url);
+  });
+  return div;
+}
+
+function _youtubeId(u) {
+  const s = String(u || '');
+  // 1) v=-Parameter an beliebiger Stelle (watch?v=, watch?app=...&v=, ...)
+  let m = s.match(/[?&]v=([\w-]{11})/);
+  if (m) return m[1];
+  // 2) Pfad-Varianten: youtu.be/, shorts/, embed/, live/, v/
+  m = s.match(/(?:youtu\.be\/|youtube\.com\/(?:shorts\/|embed\/|live\/|v\/))([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+async function handleMedienUpload(input) {
+  const l = _detailMedienLeistung;
+  if (!l || !input.files || !input.files.length) return;
+  const status = document.getElementById('medienUploadStatus');
+  const dateien = Array.from(input.files);
+  input.value = '';
+
+  // Aktuellen Speicherverbrauch holen (Quota: 250 MB pro Nutzer)
+  let belegt = await holeMedienSpeicher(l.athlet_id);
+  if (belegt === null) belegt = 0;
+
+  for (let i = 0; i < dateien.length; i++) {
+    let file = dateien[i];
+    const istVideo = file.type.startsWith('video/');
+    const istBild = file.type.startsWith('image/');
+    if (!istVideo && !istBild) continue;
+    if (istVideo && file.size > MEDIEN_MAX_VIDEO_MB * 1024 * 1024) {
+      alert(`"${file.name}" ist größer als ${MEDIEN_MAX_VIDEO_MB} MB.\nBitte lade große Videos z.B. bei YouTube hoch und füge sie über "Video-Link" hinzu.`);
+      continue;
+    }
+    if (status) status.textContent = `Lade hoch… (${i + 1}/${dateien.length})`;
+    try {
+      // Bilder vor dem Upload verkleinern (spart Speicher & Bandbreite)
+      if (istBild && file.type !== 'image/gif') file = await _komprimiereBild(file);
+      if (belegt + file.size > MEDIEN_QUOTA_MB * 1024 * 1024) {
+        alert(`Speicherlimit erreicht: "${dateien[i].name}" passt nicht mehr.\nBelegt: ${_formatMB(belegt)} MB von ${MEDIEN_QUOTA_MB} MB.\nLösche alte Medien oder nutze Video-Links.`);
+        break;
+      }
+      const ext = (file.name.split('.').pop() || (istVideo ? 'mp4' : 'jpg')).toLowerCase();
+      const pfad = `${l.athlet_id}/${l.id}/${crypto.randomUUID()}.${ext}`;
+      _zeigeMedienProgress(0);
+      await _uploadMitProgress(pfad, file);
+      const { error: dbErr } = await supabaseClient.schema('la').from('leistung_medien').insert({
+        leistung_id: l.id,
+        athlet_id: l.athlet_id,
+        typ: istVideo ? 'video' : 'bild',
+        pfad,
+        dateiname: dateien[i].name,
+        groesse_bytes: file.size
+      });
+      if (dbErr) throw dbErr;
+      belegt += file.size;
+    } catch (err) {
+      console.error('Medien-Upload fehlgeschlagen:', err);
+      alert('Upload fehlgeschlagen: ' + (err.message || err));
+    }
+  }
+  _zeigeMedienProgress(null);
+  _zeigeMedienSpeicherStatus(belegt);
+  ladeLeistungMedien(l);
+}
+
+/** Upload mit Fortschrittsanzeige über Signed Upload URL + XHR */
+async function _uploadMitProgress(pfad, file) {
+  const { data: su, error } = await supabaseClient.storage
+    .from(MEDIEN_BUCKET).createSignedUploadUrl(pfad);
+  if (error) throw error;
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', su.signedUrl);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) _zeigeMedienProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300)
+      ? resolve()
+      : reject(new Error('Upload fehlgeschlagen (Status ' + xhr.status + ')'));
+    xhr.onerror = () => reject(new Error('Netzwerkfehler beim Upload'));
+    xhr.send(file);
+  });
+}
+
+function _zeigeMedienProgress(p) {
+  const wrap = document.getElementById('medienProgressWrap');
+  const fill = document.getElementById('medienProgressFill');
+  if (!wrap || !fill) return;
+  if (p === null) { wrap.style.display = 'none'; fill.style.width = '0%'; return; }
+  wrap.style.display = 'block';
+  fill.style.width = Math.round(p * 100) + '%';
+}
+
+/** Verkleinert ein Bild client-seitig (max. Kante, JPEG) */
+function _komprimiereBild(file, maxKante = 1920, qualitaet = 0.82) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > maxKante) {
+        const f = maxKante / Math.max(w, h);
+        w = Math.round(w * f);
+        h = Math.round(h * f);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => {
+        if (blob && blob.size < file.size) {
+          resolve(new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }));
+        } else {
+          resolve(file);
+        }
+      }, 'image/jpeg', qualitaet);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+async function addMedienLink() {
+  const l = _detailMedienLeistung;
+  if (!l) return;
+  let url = prompt('Video-Link einfügen (z.B. YouTube):');
+  if (!url) return;
+  url = url.trim();
+  if (!/^https?:\/\//i.test(url)) {
+    alert('Bitte eine gültige URL (https://…) eingeben.');
+    return;
+  }
+  // Optionaler Start-Zeitstempel: Video startet immer ab dieser Stelle
+  const ts = prompt('Ab welcher Stelle soll das Video starten?\n(optional — z.B. 1:23 oder 83 für Sekunden, leer = Anfang)');
+  const sek = _parseZeitstempel(ts);
+  if (ts && ts.trim() && sek === null) {
+    alert('Zeitangabe nicht erkannt — der Link wird ohne Startzeit gespeichert.');
+  }
+  if (sek) url = _mitTimestamp(url, sek);
+  const { error } = await supabaseClient.schema('la').from('leistung_medien').insert({
+    leistung_id: l.id, athlet_id: l.athlet_id, typ: 'link', url
+  });
+  if (error) { alert('Speichern fehlgeschlagen: ' + error.message); return; }
+  ladeLeistungMedien(l);
+}
+
+/** "1:23", "01:02:03" oder "83" → Sekunden (null wenn nicht erkennbar) */
+function _parseZeitstempel(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  if (!/^\d{1,2}(:\d{1,2}){1,2}$/.test(s)) return null;
+  return s.split(':').map(Number).reduce((acc, t) => acc * 60 + t, 0);
+}
+
+/** Hängt einen Start-Zeitstempel an eine Video-URL an (YouTube: t-Parameter) */
+function _mitTimestamp(url, sek) {
+  // evtl. vorhandenen t-Parameter entfernen
+  let u = url.replace(/([?&])t=[^&]*&?/, '$1').replace(/[?&]$/, '');
+  if (/vimeo\.com/.test(u)) return u.split('#')[0] + '#t=' + sek + 's';
+  return u + (u.includes('?') ? '&' : '?') + 't=' + sek;
+}
+
+async function loescheMedium(m) {
+  if (!confirm('Dieses Medium wirklich löschen?')) return;
+  if (m.pfad) {
+    const { error: stErr } = await supabaseClient.storage.from(MEDIEN_BUCKET).remove([m.pfad]);
+    if (stErr) console.error('Storage-Löschen fehlgeschlagen:', stErr);
+  }
+  const { error } = await supabaseClient.schema('la').from('leistung_medien').delete().eq('id', m.id);
+  if (error) { alert('Löschen fehlgeschlagen: ' + error.message); return; }
+  if (_detailMedienLeistung) {
+    ladeLeistungMedien(_detailMedienLeistung);
+    holeMedienSpeicher(_detailMedienLeistung.athlet_id).then(_zeigeMedienSpeicherStatus);
+  }
+}
+
+function openMedienLightbox(typ, url) {
+  const lb = document.getElementById('medienLightbox');
+  const inhalt = document.getElementById('medienLightboxContent');
+  if (!lb || !inhalt) return;
+  inhalt.innerHTML = typ === 'video'
+    ? `<video src="${url}" controls autoplay playsinline></video>
+       <div class="medien-speed">
+         <span>Geschwindigkeit</span>
+         <input type="range" min="0.1" max="2" step="0.05" value="1" oninput="setMedienSpeed(this.value)">
+         <span id="medienSpeedValue">1,00×</span>
+         <button type="button" onclick="setMedienSpeed(1, true)">1×</button>
+       </div>`
+    : `<img src="${url}" alt="">`;
+  lb.classList.add('open');
+}
+
+async function renderSpeicherSettings() {
+  const text = document.getElementById('settingsSpeicherText');
+  const fill = document.getElementById('settingsSpeicherBarFill');
+  const liste = document.getElementById('settingsMedienListe');
+  if (!text || !fill) return;
+  const athletId = currentAthlete?.id ?? selectedAthleteId;
+  if (!athletId) { text.textContent = 'Kein Athlet ausgewählt.'; return; }
+
+  const { data, error } = await supabaseClient.schema('la').from('leistung_medien')
+    .select('*, leistung(id, disziplin, datum, wettkampf(startdatum))')
+    .eq('athlet_id', athletId);
+  if (error) { text.textContent = 'Speicher konnte nicht geladen werden.'; console.error(error); return; }
+
+  const medien = data || [];
+  const belegt = medien.reduce((s, m) => s + (m.groesse_bytes || 0), 0);
+  const quota = MEDIEN_QUOTA_MB * 1024 * 1024;
+  const prozent = Math.min(100, (belegt / quota) * 100);
+  fill.style.width = prozent.toFixed(1) + '%';
+  fill.classList.toggle('voll', prozent >= 90);
+  text.textContent = `${_formatMB(belegt)} MB belegt · ${_formatMB(Math.max(0, quota - belegt))} MB frei von ${MEDIEN_QUOTA_MB} MB`;
+
+  // Liste aller Medien, größte zuerst
+  if (!liste) return;
+  if (!medien.length) { liste.innerHTML = ''; return; }
+  const sortiert = [...medien].sort((a, b) => (b.groesse_bytes || 0) - (a.groesse_bytes || 0));
+  window._settingsMedien = sortiert;
+  liste.innerHTML = '<div class="settings-medien-head">Alle Medien (größte zuerst)</div>' +
+    sortiert.map(m => {
+      const d = m.leistung?.datum || m.leistung?.wettkampf?.startdatum;
+      const dat = d ? new Date(d).toLocaleDateString('de-DE') : '';
+      const typLabel = m.typ === 'link' ? 'Link' : (m.typ === 'video' ? 'Video' : 'Bild');
+      const groesse = m.groesse_bytes ? _formatMB(m.groesse_bytes) + ' MB' : '–';
+      const info = `${m.leistung?.disziplin || '?'}${dat ? ' · ' + dat : ''}`;
+      return `<div class="settings-medien-row">
+        <span class="settings-medien-typ">${typLabel}</span>
+        <span class="settings-medien-info" title="Leistung öffnen" onclick="openLeistungById(${m.leistung_id})">${info}</span>
+        <span class="settings-medien-groesse">${groesse}</span>
+        <button type="button" class="settings-medien-del" title="Löschen" onclick="loescheMediumAusSettings(${m.id})">×</button>
+      </div>`;
+    }).join('');
+}
+
+async function loescheMediumAusSettings(id) {
+  const m = (window._settingsMedien || []).find(x => x.id === id);
+  if (!m) return;
+  if (!confirm('Dieses Medium wirklich löschen?')) return;
+  if (m.pfad) {
+    const { error: stErr } = await supabaseClient.storage.from(MEDIEN_BUCKET).remove([m.pfad]);
+    if (stErr) console.error('Storage-Löschen fehlgeschlagen:', stErr);
+  }
+  const { error } = await supabaseClient.schema('la').from('leistung_medien').delete().eq('id', m.id);
+  if (error) { alert('Löschen fehlgeschlagen: ' + error.message); return; }
+  renderSpeicherSettings();
+}
+
+function setMedienSpeed(v, syncSlider) {
+  const video = document.querySelector('#medienLightboxContent video');
+  const label = document.getElementById('medienSpeedValue');
+  const wert = parseFloat(v);
+  if (video) video.playbackRate = wert;
+  if (label) label.textContent = wert.toFixed(2).replace('.', ',') + '×';
+  if (syncSlider) {
+    const slider = document.querySelector('#medienLightboxContent .medien-speed input[type="range"]');
+    if (slider) slider.value = wert;
+  }
+}
+
+function closeMedienLightbox(event) {
+  if (event && event.target.closest('#medienLightboxContent')) return;
+  const lb = document.getElementById('medienLightbox');
+  const inhalt = document.getElementById('medienLightboxContent');
+  if (inhalt) inhalt.innerHTML = '';
+  if (lb) lb.classList.remove('open');
+}
+
+/** Leistung per ID laden und Detail-Popup öffnen (z.B. aus dem Medien-Strip) */
+async function openLeistungById(leistungId) {
+  if (!leistungId) return;
+  const { data, error } = await supabaseClient.schema('la').from('leistung')
+    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .eq('id', leistungId).single();
+  if (error || !data) {
+    console.error('Leistung laden fehlgeschlagen:', error);
+    alert('Leistung konnte nicht geladen werden.');
+    return;
+  }
+  openDetailPopup(data);
+}
+
+/* ── Dashboard: Medien-Strip (alle Medien, sortiert nach Leistungs-Datum) ── */
+async function renderDashboardMedien() {
+  const card = document.getElementById('dashMedienCard');
+  const strip = document.getElementById('dashMedienStrip');
+  if (!card || !strip || !selectedAthleteId) return;
+
+  const { data, error } = await supabaseClient.schema('la').from('leistung_medien')
+    .select('*, leistung!inner(id, datum, disziplin, wettkampf(startdatum))')
+    .eq('athlet_id', selectedAthleteId);
+  if (error || !data || !data.length) {
+    card.style.display = 'none';
+    if (error) console.error('Dashboard-Medien laden fehlgeschlagen:', error);
+    return;
+  }
+
+  // Nach Datum der Leistung sortieren (neueste zuerst)
+  const datumVon = m => m.leistung?.datum || m.leistung?.wettkampf?.startdatum || '';
+  data.sort((a, b) => String(datumVon(b)).localeCompare(String(datumVon(a))));
+
+  // Signed URLs für Storage-Dateien
+  const pfade = data.filter(m => m.pfad).map(m => m.pfad);
+  const urlMap = {};
+  if (pfade.length) {
+    const { data: signed, error: sErr } = await supabaseClient.storage
+      .from(MEDIEN_BUCKET).createSignedUrls(pfade, 3600);
+    if (!sErr && signed) signed.forEach(s => { if (s.signedUrl) urlMap[s.path] = s.signedUrl; });
+  }
+
+  strip.innerHTML = '';
+  data.forEach(m => {
+    const url = urlMap[m.pfad];
+    const tile = document.createElement('div');
+    tile.className = 'dash-medien-tile';
+    let inhalt = '', badge = '';
+    if (m.typ === 'bild' && url) {
+      inhalt = `<img src="${url}" alt="" loading="lazy">`;
+    } else if (m.typ === 'video' && url) {
+      inhalt = `<video src="${url}#t=0.1" preload="metadata" muted playsinline></video>`;
+      badge = '<span class="dash-medien-tile-typ">Video</span>';
+    } else if (m.typ === 'link') {
+      const yt = _youtubeId(m.url);
+      inhalt = yt
+        ? `<img src="https://img.youtube.com/vi/${yt}/hqdefault.jpg" alt="" loading="lazy" onerror="this.onerror=null;this.src='https://img.youtube.com/vi/${yt}/mqdefault.jpg'">`
+        : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.4em;">🎬</div>';
+      badge = '<span class="dash-medien-tile-typ">Link</span>';
+    } else {
+      return; // ohne URL nichts anzeigen
+    }
+    const d = datumVon(m);
+    const datumText = d ? new Date(d).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+    const info = `${m.leistung?.disziplin || ''}${datumText ? ' · ' + datumText : ''}`;
+    tile.innerHTML = inhalt + badge +
+      (info.trim() ? `<div class="dash-medien-tile-info" title="Leistung öffnen">${info}</div>` : '');
+    tile.addEventListener('click', e => {
+      // Klick auf die Info-Leiste (Disziplin · Datum) → Leistungs-Popup öffnen
+      if (e.target.closest('.dash-medien-tile-info')) {
+        openLeistungById(m.leistung_id);
+        return;
+      }
+      if (m.typ === 'link') { window.open(m.url, '_blank', 'noopener'); return; }
+      if (url) openMedienLightbox(m.typ, url);
+    });
+    strip.appendChild(tile);
+  });
+  card.style.display = strip.children.length ? 'block' : 'none';
+
+  // Mausrad → horizontal scrollen
+  if (!strip._wheelInit) {
+    strip._wheelInit = true;
+    strip.addEventListener('wheel', e => {
+      if (!e.deltaY) return;
+      e.preventDefault();
+      strip.scrollLeft += e.deltaY;
+    }, { passive: false });
+  }
+}
+
 /* ================= NOTIZEN SPEICHERN FUNKTION ================= */
 async function saveNotizen(leistungId, btnElement) {
   const notizenText = document.getElementById('detailNotizen').value;
@@ -1533,67 +1981,21 @@ function initPopupDragAndResize() {
   });
 }
 
-async function initDetailMap(ort) {
-  const container = document.getElementById('detailMap');
-
-  // Alte Karte sauber entfernen
-  if (detailMap) {
-    detailMap.remove();
-    detailMap = null;
-  }
-  container.innerHTML = '';
-
-  if (!ort) {
-    container.innerHTML = '<p style="text-align:center;padding:30px;color:#888;">Kein Ort angegeben</p>';
-    return;
-  }
-
-  // Lade-Anzeige
-  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888;font-size:0.9em;">Ort wird gesucht…</div>';
-
-  // Geocoding mit Cache
+/* Geocode-Cache füllen (wird von der "Karte teilen"-Funktion genutzt;
+   die Leaflet-Karte im Popup wurde durch die Einordnung-Box ersetzt) */
+async function _geocodeOrtFuerShare(ort) {
+  if (!ort) return;
   if (!window._geocodeCache) window._geocodeCache = {};
-  const cacheKey = ort.toLowerCase().trim();
-  let coords = window._geocodeCache[cacheKey];
-
-  if (coords === undefined) {
-    try {
-      const resp = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(ort)}&limit=1&lang=de`);
-      const data = await resp.json();
-      coords = (data && data.features && data.features.length > 0)
-        ? { lat: data.features[0].geometry.coordinates[1], lon: data.features[0].geometry.coordinates[0] }
-        : null;
-      window._geocodeCache[cacheKey] = coords;
-    } catch(e) {
-      console.warn('Geocoding failed:', e);
-      coords = null;
-    }
-  }
-
-  // Container bereinigen und Karte aufbauen
-  container.innerHTML = '';
-  const center = coords ? [coords.lat, coords.lon] : [51.163375, 10.447683];
-  const zoom   = coords ? 8 : 4;
-
-  detailMap = L.map(container, { center, zoom, zoomControl: true, attributionControl: true });
-  const _detailCfg = (typeof MAP_TILE_LAYERS !== 'undefined' && typeof _userMapStyle !== 'undefined')
-    ? (MAP_TILE_LAYERS[_userMapStyle] || MAP_TILE_LAYERS.osm)
-    : { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '© OpenStreetMap' };
-  L.tileLayer(_detailCfg.url, { attribution: _detailCfg.attribution, maxZoom: 19 }).addTo(detailMap);
-
-  if (coords) {
-    L.circleMarker([coords.lat, coords.lon], {
-      radius: 7,
-      fillColor: '#1e3a8a',
-      color: 'white',
-      weight: 2,
-      fillOpacity: 1
-    }).addTo(detailMap)
-      .bindTooltip(ort, { permanent: true, direction: 'top', offset: [0, -12] })
-      .openTooltip();
-  } else {
-    container.insertAdjacentHTML('beforeend',
-      '<div style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.85);padding:4px 10px;border-radius:6px;font-size:0.8em;color:#888;z-index:1000;">Ort nicht gefunden</div>');
+  const key = ort.toLowerCase().trim();
+  if (window._geocodeCache[key] !== undefined) return;
+  try {
+    const resp = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(ort)}&limit=1&lang=de`);
+    const data = await resp.json();
+    window._geocodeCache[key] = (data && data.features && data.features.length > 0)
+      ? { lat: data.features[0].geometry.coordinates[1], lon: data.features[0].geometry.coordinates[0] }
+      : null;
+  } catch (e) {
+    console.warn('Geocoding failed:', e);
   }
 }
 
@@ -2946,6 +3348,19 @@ body.dark-mode .analyse-pf-input {
   border-color: var(--border-strong) !important;
 }
 body.dark-mode .analyse-pf-label { color: var(--text-secondary) !important; }
+body.dark-mode .analyse-chart-box { background: transparent !important; }
+body.dark-mode .analyse-chart-title { color: var(--text-primary) !important; }
+body.dark-mode .analyse-chart-options { background: var(--bg-card, #1c2230) !important; }
+body.dark-mode .analyse-chart-options-label { color: var(--text-secondary) !important; }
+body.dark-mode .analyse-empty-state { background: var(--bg-card, #1c2230) !important; }
+body.dark-mode .analyse-pill-toggle { background: var(--bg-elevated) !important; border-color: var(--border-subtle) !important; }
+body.dark-mode .analyse-subtab-btn { color: var(--text-secondary); }
+body.dark-mode .analyse-subtab-btn.active { background: var(--accent-primary); color: #fff; }
+body.dark-mode .bl-jahr-chip { background: var(--bg-elevated) !important; color: var(--text-secondary) !important; border-color: var(--border-strong) !important; }
+body.dark-mode .bl-jahr-chip.active { background: var(--accent-primary) !important; border-color: var(--accent-primary) !important; color: #fff !important; }
+body.dark-mode .medien-thumb { background: var(--bg-elevated) !important; border-color: var(--border-strong) !important; }
+body.dark-mode .medien-btn { border-color: var(--accent-primary); color: var(--accent-secondary); }
+body.dark-mode .medien-btn--primary { background: var(--accent-primary); color: #fff; }
 
 /* ══════════════════════════════════════════════════════════════
    DARK MODE — ANALYSE-CONTENT & KACHELN
@@ -2956,20 +3371,6 @@ body.dark-mode .analyse-pf-label { color: var(--text-secondary) !important; }
 body.dark-mode .analyse-content {
   background: var(--bg-surface, #161b22) !important;
   box-shadow: 0 2px 16px rgba(0,0,0,0.45) !important;
-}
-
-/* SB-Inline-Jahr-Selektor-Wrap (inline background:#f2f6fa) */
-body.dark-mode #sbInlineJahrWrap {
-  background: var(--bg-card, #1c2230) !important;
-  border-color: var(--border-subtle) !important;
-}
-body.dark-mode #sbInlineJahrWrap label {
-  color: var(--accent-secondary, #93c5fd) !important;
-}
-body.dark-mode #sbJahrInline {
-  background: var(--bg-elevated, #242e42) !important;
-  color: var(--text-primary) !important;
-  border-color: var(--border-strong) !important;
 }
 
 /* SB-Diagramm-Container (inline background:#f2f6fa) */
@@ -3771,34 +4172,6 @@ body.dark-mode #sbDiagrammContainer {
       line-height: 1.2;
     }
 
-/* Farbige Varianten für Bestleistungen-Buttons */
-    .bestleistungen-btn-gold {
-      background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%) !important;
-      color: #1a1a1a !important;
-    }
-
-    .bestleistungen-btn-gold:hover {
-      background: linear-gradient(135deg, #FFE55C 0%, #FFB84D 100%) !important;
-    }
-
-    .bestleistungen-btn-blue {
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
-      color: white !important;
-    }
-
-    .bestleistungen-btn-blue:hover {
-      background: linear-gradient(135deg, #6BC0FF 0%, #33F5FF 100%) !important;
-    }
-
-    .bestleistungen-btn-green {
-      background: linear-gradient(135deg, #a8e063 0%, #56ab2f 100%) !important;
-      color: white !important;
-    }
-
-    .bestleistungen-btn-green:hover {
-      background: linear-gradient(135deg, #BCE584 0%, #6FBF45 100%) !important;
-    }
-
 @media (max-width: 768px) {
       .statistik-buttons-grid {
         grid-template-columns: repeat(3, 1fr);
@@ -4201,14 +4574,7 @@ body.dark-mode #sbDiagrammContainer {
     .results-action-btn:hover { background: var(--section-bg); border-color: var(--text-muted); }
 
     /* Kleiner Schließen-Button in der Tabellenleiste */
-    .results-close-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 28px; height: 28px; padding: 0; flex-shrink: 0;
-      background: white; border: 1.5px solid navy; color: navy;
-      border-radius: 50%; font-size: 1.1em; line-height: 1; cursor: pointer;
-      transition: background 0.2s;
-    }
-    .results-close-btn:hover { background: #e8eef8; }
+
 
     /* results-info in Leistungen: gleiche Breite wie Dashboard-Inhaltsbereich (900px - 2×24px) */
     #leistungenAusgabe .results-info {
@@ -6606,15 +6972,6 @@ tr.pb-row:hover {
       gap: 6px;
     }
 
-    .detail-chart-wrapper h3::before,
-    .detail-map-wrapper h3::before {
-      content: '';
-      width: 4px;
-      height: 16px;
-      background: linear-gradient(135deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
-      border-radius: 2px;
-    }
-
         .detail-chart-container {
       position: relative;
       height: 100%;
@@ -7396,19 +7753,16 @@ tr.pb-row:hover {
       transition: opacity 0.15s;
     }
     #diagrammAnzeigenBtn, #diagrammAktualisierenBtn,
-    #sbDiagrammAnzeigenBtn, #sbDiagrammAktualisierenBtn,
-    #prognoseDiagrammAnzeigenBtn, #prognoseDiagrammAktualisierenBtn {
+    #sbDiagrammAnzeigenBtn, #sbDiagrammAktualisierenBtn {
       background: #1e3a8a;
       color: #fff;
     }
     #diagrammAnzeigenBtn:hover, #diagrammAktualisierenBtn:hover,
-    #sbDiagrammAnzeigenBtn:hover, #sbDiagrammAktualisierenBtn:hover,
-    #prognoseDiagrammAnzeigenBtn:hover, #prognoseDiagrammAktualisierenBtn:hover {
+    #sbDiagrammAnzeigenBtn:hover, #sbDiagrammAktualisierenBtn:hover {
       opacity: 0.85;
     }
     #diagrammSchließenBtn, #diagrammAusklappenBtn,
-    #sbDiagrammSchließenBtn, #sbDiagrammAusklappenBtn,
-    #prognoseDiagrammSchließenBtn, #prognoseDiagrammAusklappenBtn {
+    #sbDiagrammSchließenBtn, #sbDiagrammAusklappenBtn {
       background: transparent;
       color: #1e3a8a;
       border: 1.5px solid #1e3a8a !important;
@@ -7416,10 +7770,341 @@ tr.pb-row:hover {
       font-weight: 500;
     }
     #diagrammSchließenBtn:hover, #diagrammAusklappenBtn:hover,
-    #sbDiagrammSchließenBtn:hover, #sbDiagrammAusklappenBtn:hover,
-    #prognoseDiagrammSchließenBtn:hover, #prognoseDiagrammAusklappenBtn:hover {
+    #sbDiagrammSchließenBtn:hover, #sbDiagrammAusklappenBtn:hover {
       background: #f0f4ff;
     }
+    /* ─── Analyse: Chart-Boxen, Optionen & Empty States (statt Inline-Styles) ─── */
+    .analyse-view-toggle-wrap { display: flex; justify-content: center; }
+    .analyse-view-toggle { margin-bottom: 16px; }
+    .analyse-pill-toggle--wrap { flex-wrap: wrap; justify-content: center; max-width: 100%; }
+    .analyse-subtab-btn--sm { min-width: 0; flex: 0 1 auto; padding: 6px 12px; font-size: 0.82em; }
+    .bl-controls-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .bl-controls-center { display: flex; justify-content: center; min-width: 0; }
+    .bl-pb-modus { display: flex; }
+    @media (max-width: 600px) {
+      .bl-controls-row { grid-template-columns: 1fr; justify-items: start; }
+      .bl-controls-center { justify-content: flex-start; }
+    }
+    .analyse-chart-box {
+      background: var(--analyse-box-bg, #f2f6fa);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .analyse-chart-title {
+      margin: 0 0 10px 0;
+      color: var(--analyse-heading, #2a5298);
+    }
+    .analyse-chart-options {
+      margin-bottom: 12px;
+      padding: 10px;
+      background: var(--surface-card, #fff);
+      border-radius: 6px;
+    }
+    .analyse-chart-options-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .analyse-chart-options-label { color: var(--analyse-heading, #2a5298); font-size: 0.88em; }
+    .analyse-check { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85em; }
+    .analyse-check--pf { gap: 7px; font-size: 0.84em; padding: 4px 0; }
+    .analyse-check input[type="checkbox"] { accent-color: var(--primary-color, #1e3a8a); }
+    .analyse-empty-state {
+      padding: 48px 16px;
+      text-align: center;
+      color: var(--text-muted, #94a3b8);
+      font-size: 0.95em;
+      background: var(--analyse-box-bg, #f2f6fa);
+      border-radius: 8px;
+    }
+    /* Jahres-Schnellfilter (Bestleistungen, nur SB-Ansicht) */
+    .bl-jahr-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+    .bl-jahr-chip {
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1.5px solid var(--border-color, #dde6f5);
+      background: var(--surface-card, #fff);
+      color: var(--text-primary, #1e293b);
+      font-size: 0.84em;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .bl-jahr-chip:hover { border-color: var(--primary-color, #1e3a8a); color: var(--primary-color, #1e3a8a); }
+    .bl-jahr-chip.active { background: var(--primary-color, #1e3a8a); border-color: var(--primary-color, #1e3a8a); color: #fff; font-weight: 600; }
+
+    /* ─── Detail-Popup: Medien (Fotos & Videos) ─── */
+    .detail-medien-wrapper { margin-top: 18px; }
+    .detail-medien-wrapper h3 { font-size: 1em; margin-bottom: 10px; }
+    .detail-medien-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .detail-medien-grid:empty::before {
+      content: "Noch keine Medien vorhanden.";
+      color: var(--text-muted, #94a3b8);
+      font-size: 0.85em;
+    }
+    .medien-thumb {
+      position: relative;
+      width: 240px;
+      max-width: 100%;
+      aspect-ratio: 16 / 9;
+      height: auto;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      background: var(--analyse-box-bg, #f2f6fa);
+      border: 1px solid var(--border-color, #dde6f5);
+    }
+    .medien-thumb img, .medien-thumb video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .medien-thumb-typ {
+      position: absolute; left: 4px; bottom: 4px;
+      background: rgba(15,23,42,0.65); color: #fff;
+      border-radius: 5px; padding: 1px 5px;
+      font-size: 0.68em; font-weight: 600;
+    }
+    .medien-thumb-del {
+      position: absolute !important; top: 5px; right: 5px;
+      width: 22px !important; height: 22px !important;
+      padding: 0 !important; margin: 0 !important;
+      border: 1.5px solid #1e3a8a !important;
+      border-radius: 50% !important;
+      background: #ffffff !important; color: #1e3a8a !important;
+      font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.25) !important;
+      transform: none !important;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .medien-thumb-del:hover {
+      background: #dc2626 !important;
+      border-color: #dc2626 !important;
+      color: #ffffff !important;
+    }
+    body.dark-mode .medien-thumb-del {
+      background: var(--bg-elevated, #242e42) !important;
+      color: var(--accent-secondary, #93c5fd) !important;
+      border-color: var(--accent-primary, #1e3a8a) !important;
+    }
+    .detail-medien-controls { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+    .medien-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 7px;
+      border: 1.5px solid var(--primary-color, #1e3a8a);
+      background: transparent; color: var(--primary-color, #1e3a8a);
+      font-size: 0.85em; font-weight: 600; cursor: pointer;
+    }
+    .medien-btn--primary { background: var(--primary-color, #1e3a8a); color: #fff; }
+    .medien-btn input[type="file"] { display: none; }
+    .medien-status { font-size: 0.82em; color: var(--text-muted, #94a3b8); }
+    .medien-lightbox {
+      display: none; position: fixed; inset: 0; z-index: 100000;
+      background: rgba(10,15,30,0.88);
+      align-items: center; justify-content: center; padding: 24px;
+    }
+    .medien-lightbox.open { display: flex; }
+    .medien-lightbox img, .medien-lightbox video {
+      max-width: 92vw; max-height: 82vh; border-radius: 10px;
+    }
+    #medienLightboxContent { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .medien-speed {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(15,23,42,0.72);
+      border-radius: 999px; padding: 7px 16px;
+      color: #e2e8f0; font-size: 0.85em; font-weight: 600;
+    }
+    .medien-speed input[type="range"] { width: 160px; accent-color: #93c5fd; cursor: pointer; }
+    .medien-speed #medienSpeedValue { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+    .medien-speed button {
+      background: rgba(255,255,255,0.15) !important;
+      border: none !important; color: #fff !important;
+      border-radius: 999px !important; padding: 3px 12px !important;
+      font-size: 0.85em; font-weight: 700; cursor: pointer;
+      box-shadow: none !important; transform: none !important;
+    }
+    .medien-speed button:hover { background: rgba(255,255,255,0.3) !important; }
+    .medien-lightbox-close {
+      position: absolute; top: 14px; right: 18px;
+      background: none; border: none; color: #fff;
+      font-size: 30px; cursor: pointer;
+    }
+
+    /* ─── Einstellungen: Speicher-Anzeige ─── */
+    .speicher-bar {
+      width: 100%; height: 10px;
+      background: var(--analyse-box-bg, #e8eef6);
+      border-radius: 999px; overflow: hidden;
+    }
+    .speicher-bar-fill {
+      height: 100%;
+      background: var(--primary-color, #1e3a8a);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+    .speicher-bar-fill.voll { background: #dc2626; }
+    .speicher-text { margin-top: 8px; font-size: 0.85em; color: var(--text-muted, #64748b); }
+
+    /* ─── Dashboard: Medien-Strip ─── */
+    .dash-medien-card {
+      background: #f2f6fa;
+      border: 1px solid #dde6f5;
+      border-radius: 14px;
+      box-shadow: 0 4px 18px rgba(30,58,138,0.10);
+      padding: 16px;
+      overflow: hidden;
+    }
+    .dash-medien-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: thin;
+      padding-bottom: 2px;
+    }
+    .dash-medien-strip::-webkit-scrollbar { height: 6px; }
+    .dash-medien-strip::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .dash-medien-tile {
+      position: relative;
+      flex: 0 0 calc(25% - 6px);  /* gleiche Breite wie eine Statistik-Kachel */
+      aspect-ratio: 16 / 9;       /* Standard-Landschaftsformat */
+      height: auto;
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      background: #e8eef6;
+    }
+    .dash-medien-tile img, .dash-medien-tile video {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+    }
+    .dash-medien-tile-info {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 3px 7px;
+      background: linear-gradient(transparent, rgba(15,23,42,0.72));
+      color: #fff; font-size: 0.68em; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      cursor: pointer;
+    }
+    .dash-medien-tile-info:hover { text-decoration: underline; background: linear-gradient(transparent, rgba(30,58,138,0.85)); }
+    .dash-medien-tile-typ {
+      position: absolute; top: 4px; right: 4px;
+      background: rgba(15,23,42,0.65); color: #fff;
+      border-radius: 5px; padding: 1px 5px;
+      font-size: 0.64em; font-weight: 600;
+    }
+    body.dark-mode .dash-medien-card { background: #1e293b !important; border-color: #334155 !important; }
+    body.dark-mode .dash-medien-tile { background: var(--bg-elevated) !important; }
+
+    /* ─── Dashboard: Karten-Popup ─── */
+    .dash-map-popup {
+      display: none; position: fixed; inset: 0; z-index: 9000; /* niedrig: alle anderen Popups liegen darüber */
+      background: rgba(10,15,30,0.55);
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .dash-map-popup.open { display: flex; }
+    .dash-map-popup-content {
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+      width: min(1000px, 96vw);
+      max-height: 92vh;
+      overflow: auto;
+      padding: 0;
+    }
+    .dash-map-popup-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px;
+      background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+      border-radius: 14px 14px 0 0;
+    }
+    .dash-map-popup-header h2 {
+      font-size: 1.05em; margin: 0;
+      color: #ffffff; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .dash-map-popup-content .dashboard-map-container {
+      margin: 16px 18px 18px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    #dashMiniMap { cursor: pointer; }
+    body.dark-mode .dash-map-popup-content { background: var(--bg-surface, #161b22); }
+    body.dark-mode .dash-map-popup-header h2 { color: var(--text-primary); }
+
+    /* ─── Medien: Kamera-Indikator, Verwaltung, Upload-Fortschritt ─── */
+    tr.hat-medien td:first-child::after {
+      content: '';
+      display: inline-block;
+      width: 13px; height: 13px;
+      margin-left: 6px;
+      vertical-align: -2px;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231e3a8a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z'/%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3C/svg%3E") no-repeat center / contain;
+    }
+    body.dark-mode tr.hat-medien td:first-child::after {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2393c5fd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z'/%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3C/svg%3E");
+    }
+    .settings-medien-liste { margin-top: 14px; max-height: 280px; overflow-y: auto; }
+    .settings-medien-head {
+      font-size: 0.75em; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 6px;
+    }
+    .settings-medien-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 4px; border-bottom: 1px solid #eef2f7; font-size: 0.85em;
+    }
+    .settings-medien-typ { flex: 0 0 44px; font-weight: 700; color: #1e3a8a; font-size: 0.8em; }
+    .settings-medien-info {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; color: #334155; cursor: pointer;
+    }
+    .settings-medien-info:hover { color: #1e3a8a; text-decoration: underline; }
+    .settings-medien-groesse { flex: 0 0 72px; text-align: right; color: #64748b; font-variant-numeric: tabular-nums; }
+    .settings-medien-del {
+      flex: 0 0 auto; width: 22px; height: 22px;
+      border: 1.5px solid #dde6f5 !important; border-radius: 50% !important;
+      background: #ffffff !important; color: #64748b !important;
+      cursor: pointer; padding: 0 !important; line-height: 1; font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: none !important; transform: none !important;
+    }
+    .settings-medien-del:hover { background: #fee2e2 !important; color: #dc2626 !important; border-color: #fca5a5 !important; }
+    body.dark-mode .settings-medien-row { border-bottom-color: #2d3748; }
+    body.dark-mode .settings-medien-info { color: #cbd5e1; }
+    body.dark-mode .settings-medien-typ { color: #93c5fd; }
+    body.dark-mode .settings-medien-del { background: #1e293b !important; border-color: #475569 !important; }
+    .medien-progress {
+      width: 100%; max-width: 320px; height: 7px;
+      background: var(--analyse-box-bg, #e8eef6);
+      border-radius: 999px; overflow: hidden;
+    }
+    .medien-progress > div {
+      height: 100%; width: 0%;
+      background: var(--primary-color, #1e3a8a);
+      border-radius: 999px;
+      transition: width 0.15s;
+    }
+
+    /* ─── Wettkampf-Detail: zusammenhängende Karte ─── */
+    .wk-detail-card {
+      background: #f2f6fa;
+      border: 1px solid #dde6f5;
+      border-radius: 14px;
+      box-shadow: 0 4px 18px rgba(30,58,138,0.10);
+      overflow: hidden;
+    }
+    .wk-detail-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+    }
+    .wk-detail-header-title {
+      color: #ffffff; font-weight: 700; font-size: 0.95em;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .wk-detail-section { padding: 18px 20px; }
+    .wk-detail-section + .wk-detail-section { border-top: 1px solid #e2e8f0; }
+    body.dark-mode .wk-detail-card { background: #1e293b !important; border-color: #334155 !important; }
+    body.dark-mode .wk-detail-section + .wk-detail-section { border-top-color: #2d3748; }
+
     /* CSV-Export-Buttons in Analyse: gleicher Stil wie in Leistungstabellen */
     .analyse-section .export-btn {
       background: #f0fdf4 !important;
@@ -9092,6 +9777,19 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
     </div>
 
 
+    <!-- Speicher (Medien) -->
+    <div class="settings-card">
+      <div style="padding:14px 20px 4px;">
+        <p class="settings-section-title" style="margin:0;">Speicher</p>
+        <p style="margin:6px 0 0;font-size:0.82em;color:#64748b;line-height:1.4;">Belegter Speicher durch hochgeladene Fotos und Videos (Video-Links zählen nicht).</p>
+      </div>
+      <div style="padding:12px 20px 18px;">
+        <div class="speicher-bar"><div id="settingsSpeicherBarFill" class="speicher-bar-fill" style="width:0%;"></div></div>
+        <div id="settingsSpeicherText" class="speicher-text">Wird geladen…</div>
+        <div id="settingsMedienListe" class="settings-medien-liste"></div>
+      </div>
+    </div>
+
     <!-- Kartenstil -->
     <div class="settings-card">
       <div style="padding:14px 20px 4px;"><p class="settings-section-title" style="margin:0;">Kartenstil</p></div>
@@ -9443,12 +10141,11 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             <!-- Dashboard Inner Tabs -->
             <div id="dashInnerTabs" style="display:none;">
           <div class="dash-inner-card">
-          <div class="dash-inner-tab-bar">
-            <button class="dash-inner-tab-btn active" onclick="switchDashTab('entwicklung')">Entwicklung</button>
-            <button class="dash-inner-tab-btn" onclick="switchDashTab('karte')">Karte</button>
-          </div>
-
-          <!-- Pane: Entwicklung -->
+          <h3 class="dashboard-section-title" style="margin:2px 0 12px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            Entwicklung
+          </h3>
+          <!-- Pane: Entwicklung (Karte ist jetzt ein Popup über die Mini-Karte) -->
           <div id="dashPaneEntwicklung" class="dash-inner-pane">
             <div id="dashTopDiszCharts" style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;"></div>
           </div>
@@ -9466,55 +10163,17 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             </div>
           </div>
 
-          <!-- Pane: Karte -->
-          <div id="dashPaneKarte" class="dash-inner-pane" style="display:none;">
-            <div class="dashboard-map-container">
-              <h3 class="dashboard-section-title">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                Wettkampforte
-              </h3>
-              <div id="mapContainer" style="position: relative; height: 520px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid #e0e0e0;">
-                <!-- Zoom-Reset-Button unten links -->
-                <button id="mapResetZoomBtn" onclick="resetMapZoom()" title="Zoom zurücksetzen" style="position:absolute;bottom:12px;left:12px;z-index:1000;background:white;border:1.5px solid #c7d4f5;border-radius:9px;cursor:pointer;padding:8px 16px;color:#1e3a8a;font-size:0.88em;font-weight:700;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(30,58,138,0.15);" onmouseover="this.style.background='#eef4ff'" onmouseout="this.style.background='white'">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                  Übersicht
-                </button>
-                <!-- Vollbild-Button -->
-                <button id="mapFullscreenBtn" onclick="toggleMapFullscreen()" title="Vollbild" style="position:absolute;top:10px;right:10px;z-index:1000;background:white;border:1.5px solid #e0e0e0;border-radius:7px;cursor:pointer;padding:6px 8px;color:#6b7280;display:flex;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,0.12);" onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background='white'">
-                  <svg id="mapFullscreenIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                </button>
-                <!-- Leaflet Weltkarte -->
-                <div id="wettkampfLeafletMap" style="width: 100%; height: 100%;"></div>
-                <!-- Legende -->
-                <div id="mapLegend" class="map-legend">
-                  <div style="margin-bottom: 8px; font-weight: bold; color: #2a5298;">Leistungen:</div>
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
-                    <div style="width: 6px; height: 6px; background: #b3d9ff; border: 1.5px solid #66a3d2; border-radius: 50%;"></div>
-                    <span>1-2</span>
-                  </div>
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
-                    <div style="width: 8px; height: 8px; background: #80bfff; border: 1.5px solid #4d94d9; border-radius: 50%;"></div>
-                    <span>3-5</span>
-                  </div>
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
-                    <div style="width: 10px; height: 10px; background: #4da6ff; border: 1.5px solid #3385d6; border-radius: 50%;"></div>
-                    <span>6-10</span>
-                  </div>
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
-                    <div style="width: 12px; height: 12px; background: #1a8cff; border: 1.5px solid #1a75d2; border-radius: 50%;"></div>
-                    <span>11-20</span>
-                  </div>
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <div style="width: 14px; height: 14px; background: #0066cc; border: 1.5px solid #004d99; border-radius: 50%;"></div>
-                    <span>20+</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           </div><!-- /.dash-inner-card -->
             </div><!-- /#dashInnerTabs -->
+
+            <!-- Medien-Strip (alle Medien, sortiert nach Leistungs-Datum) -->
+            <div id="dashMedienCard" class="dash-medien-card" style="display:none;">
+              <h3 class="dashboard-section-title" style="margin:6px 6px 10px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                Medien
+              </h3>
+              <div id="dashMedienStrip" class="dash-medien-strip"></div>
+            </div>
 
           </div><!-- /.dash-center-col -->
 
@@ -10273,10 +10932,6 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
                 Entwicklungen
               </button>
-              <button class="analyse-nav-item" data-section="sb" onclick="switchAnalyseSection('sb')">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                Saisonbestleistungen
-              </button>
               <button class="analyse-nav-item" data-section="prognose" onclick="switchAnalyseSection('prognose')">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L14 8.5L19 10L14 11.5L12 17L10 11.5L5 10L10 8.5L12 3Z"/></svg>
                 Prognose
@@ -10298,6 +10953,16 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             <!-- ══ Entwicklungen ══ -->
             <div id="analyseSection-entwicklungen" class="analyse-section">
               <h3 class="analyse-section-title">Leistungsentwicklung</h3>
+
+              <!-- Ansicht-Umschalter: Einzelleistungen / SB & Saisondurchschnitte -->
+              <div class="analyse-view-toggle-wrap">
+                <div class="analyse-pill-toggle analyse-view-toggle">
+                  <button type="button" id="entwicklungenViewBtn-einzel" class="analyse-subtab-btn active" onclick="switchEntwicklungenView('einzel')">Einzelleistungen</button>
+                  <button type="button" id="entwicklungenViewBtn-sb" class="analyse-subtab-btn" onclick="switchEntwicklungenView('sb')">SB &amp; Saisondurchschnitte</button>
+                </div>
+              </div>
+
+              <div id="entwicklungenView-einzel">
               <div class="analyse-panel">
 
                 <!-- Filter links -->
@@ -10322,8 +10987,8 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Vergleich</span>
-                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:0.84em; padding:4px 0;">
-                      <input type="checkbox" id="vergleichsModus" onchange="toggleVergleichsModus()" style="accent-color:#1e3a8a;">
+                    <label class="analyse-check analyse-check--pf">
+                      <input type="checkbox" id="vergleichsModus" onchange="toggleVergleichsModus()">
                       Zwei Disziplinen vergleichen
                       <img src="icons/score.png" width="14" height="14" style="object-fit:contain;opacity:0.75;vertical-align:middle;flex-shrink:0;cursor:default;" title="Nur für Score-Disziplinen verfügbar" alt="Score">
                     </label>
@@ -10338,19 +11003,18 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
                 <!-- Chart rechts -->
                 <div class="analyse-panel-chart">
-                  <div id="diagrammContainer" style="background:#f2f6fa; padding:10px; border-radius:8px;">
-                    <h4 style="margin:0 0 10px 0; color:#2a5298;">Leistungsdiagramm</h4>
+                  <div id="diagrammContainer" class="analyse-chart-box">
+                    <h4 class="analyse-chart-title">Leistungsdiagramm</h4>
                     <div style="height:400px;"><canvas id="leistungsChart"></canvas></div>
                   </div>
                   <div id="leistungsentwicklungTable" style="display:none;"></div>
                 </div>
 
               </div>
-            </div>
+              </div><!-- /entwicklungenView-einzel -->
 
-            <!-- ══ SB & Durchschnitt ══ -->
-            <div id="analyseSection-sb" class="analyse-section" style="display:none">
-              <h3 class="analyse-section-title">SB & Saisondurchschnitte</h3>
+              <!-- ── SB & Saisondurchschnitte (Ansicht) ── -->
+              <div id="entwicklungenView-sb" style="display:none">
               <div class="analyse-panel">
 
                 <!-- Filter links -->
@@ -10375,8 +11039,8 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Vergleich</span>
-                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:0.84em; padding:4px 0;">
-                      <input type="checkbox" id="sbVergleichsModus" onchange="toggleSBVergleichsModus()" style="accent-color:#1e3a8a;">
+                    <label class="analyse-check analyse-check--pf">
+                      <input type="checkbox" id="sbVergleichsModus" onchange="toggleSBVergleichsModus()">
                       Zwei Disziplinen vergleichen
                       <img src="icons/score.png" width="14" height="14" style="object-fit:contain;opacity:0.75;vertical-align:middle;flex-shrink:0;cursor:default;" title="Nur für Score-Disziplinen verfügbar" alt="Score">
                     </label>
@@ -10391,27 +11055,29 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
                 <!-- Chart rechts -->
                 <div class="analyse-panel-chart">
-                  <div id="sbDiagrammOptionsContainer" style="display:none; margin-bottom:12px; padding:10px; background:#fff; border-radius:6px;">
-                    <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
-                      <strong style="color:#2a5298; font-size:0.88em;">Anzeigen:</strong>
-                      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85em;">
-                        <input type="checkbox" id="sbShowSBs" checked onchange="zeigeSBDiagramm()" style="accent-color:#1e3a8a;">
+                  <div id="sbEmptyState" class="analyse-empty-state" style="display:none;">Bitte eine Disziplin wählen, um das Diagramm anzuzeigen.</div>
+                  <div id="sbDiagrammOptionsContainer" class="analyse-chart-options" style="display:none;">
+                    <div class="analyse-chart-options-row">
+                      <strong class="analyse-chart-options-label">Anzeigen:</strong>
+                      <label class="analyse-check">
+                        <input type="checkbox" id="sbShowSBs" checked onchange="zeigeSBDiagramm()">
                         Saisonbestleistungen (SB)
                       </label>
-                      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85em;">
-                        <input type="checkbox" id="sbShowAverages" checked onchange="zeigeSBDiagramm()" style="accent-color:#1e3a8a;">
+                      <label class="analyse-check">
+                        <input type="checkbox" id="sbShowAverages" checked onchange="zeigeSBDiagramm()">
                         Saisondurchschnitte (Ø)
                       </label>
                     </div>
                   </div>
-                  <div id="sbDiagrammContainer" style="display:none; background:#f2f6fa; padding:10px; border-radius:8px;">
-                    <h4 style="margin:0 0 10px 0; color:#2a5298;">SB & Saisondurchschnitte</h4>
+                  <div id="sbDiagrammContainer" class="analyse-chart-box" style="display:none;">
+                    <h4 class="analyse-chart-title">SB &amp; Saisondurchschnitte</h4>
                     <div style="height:400px;"><canvas id="sbChart"></canvas></div>
                   </div>
                   <div id="sbTable" style="display:none;"></div>
                 </div>
 
               </div>
+              </div><!-- /entwicklungenView-sb -->
             </div>
 
             <!-- ══ Prognose ══ -->
@@ -10423,14 +11089,14 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                 <div class="analyse-panel-filters">
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Disziplin</span>
-                    <select id="prognoseDisziplin" class="analyse-pf-input">
+                    <select id="prognoseDisziplin" class="analyse-pf-input" onchange="onPrognoseChange()">
                       <option value="">– Disziplin –</option>
                     </select>
                   </div>
 
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Datenbasis</span>
-                    <select id="prognoseDatenbasis" class="analyse-pf-input">
+                    <select id="prognoseDatenbasis" class="analyse-pf-input" onchange="onPrognoseChange()">
                       <option value="12">Letzte 12 Monate</option>
                       <option value="24">Letzte 2 Jahre</option>
                       <option value="60" selected>Letzte 5 Jahre</option>
@@ -10439,24 +11105,18 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                   </div>
                   <div class="analyse-pf-group">
                     <span class="analyse-pf-label">Prognosezeitraum</span>
-                    <select id="prognoseHorizont" class="analyse-pf-input">
+                    <select id="prognoseHorizont" class="analyse-pf-input" onchange="onPrognoseChange()">
                       <option value="6">6 Monate</option>
                       <option value="12" selected>12 Monate</option>
                       <option value="24">2 Jahre</option>
                       <option value="60">5 Jahre</option>
                     </select>
                   </div>
-
-                  <div class="analyse-pf-actions">
-                    <button id="prognoseDiagrammAnzeigenBtn" onclick="zeigePrognoseDiagramm()">Prognose anzeigen</button>
-                    <button id="prognoseDiagrammAktualisierenBtn" onclick="zeigePrognoseDiagramm()" style="display:none;"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5"/></svg> Aktualisieren</button>
-                    <button id="prognoseDiagrammSchließenBtn" onclick="schließePrognoseDiagramm()" style="display:none;">Einklappen</button>
-                    <button id="prognoseDiagrammAusklappenBtn" onclick="klappeAusPrognoseDiagramm()" style="display:none;">Ausklappen</button>
-                  </div>
                 </div>
 
                 <!-- Chart rechts -->
                 <div class="analyse-panel-chart">
+                  <div id="prognoseEmptyState" class="analyse-empty-state">Disziplin wählen, um die Prognose anzuzeigen.</div>
                   <div id="prognoseDiagrammContainer" style="display:none;">
                     <div id="prognoseStats" class="prognose-stats"></div>
                     <div class="prognose-chart-wrapper"><canvas id="prognoseChart"></canvas></div>
@@ -10471,94 +11131,84 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             <div id="analyseSection-statistiken" class="analyse-section" style="display:none">
               <h3 class="analyse-section-title">Statistiken</h3>
 
-              <!-- Statistiken Filter -->
-              <div id="statistikTopBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-                <div style="position:relative;">
-                  <button class="lt-btn" id="stFilterBtn" onclick="toggleStFilterDropdown()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                    Filter
-                    <span class="lt-badge" id="stFilterBadge" style="display:none;">0</span>
-                  </button>
-                  <div class="lt-dropdown" id="stFilterDropdown" style="left:0;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1.5px solid #e2e8f0;">
-                      <span style="font-size:0.75em;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;">Filter</span>
-                      <button class="dropdown-reset-btn" onclick="statistikFilterZuruecksetzen();updateStFilterUI()">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.39"/></svg>
-                        zurücksetzen
-                      </button>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Disziplin</div>
-                      <select id="statistikFilterDisziplin" onchange="updateStFilterUI()"><option value="">– Alle –</option></select>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Zeitraum</div>
-                      <select id="statistikFilterZeitraum" onchange="onStZeitraumChange()">
-                        <option value="">– Alle –</option>
-                        <option value="custom">Benutzerdefiniert</option>
-                      </select>
-                      <div id="statistikCustomDateRange" style="display:none;margin-top:6px;">
-                        <div class="ls-date-pair">
-                          <label>Von<input type="date" id="statistikFilterVon" onchange="updateStFilterUI()"></label>
-                          <label>Bis<input type="date" id="statistikFilterBis" onchange="updateStFilterUI()"></label>
+              <!-- Ansicht-Umschalter -->
+              <div class="analyse-view-toggle-wrap">
+                <div id="stAnsichtToggle" class="analyse-pill-toggle analyse-view-toggle analyse-pill-toggle--wrap">
+                  <button type="button" class="analyse-subtab-btn analyse-subtab-btn--sm active" data-view="top" onclick="switchStAnsicht('top')">Top-Leistungen</button>
+                  <button type="button" class="analyse-subtab-btn analyse-subtab-btn--sm" data-view="avgleistung" onclick="switchStAnsicht('avgleistung')">Ø Leistung</button>
+                  <button type="button" class="analyse-subtab-btn analyse-subtab-btn--sm" data-view="avgplatz" onclick="switchStAnsicht('avgplatz')">Ø Platzierung</button>
+                  <button type="button" class="analyse-subtab-btn analyse-subtab-btn--sm" data-view="quote" onclick="switchStAnsicht('quote')">Erfolgsquote</button>
+                  <button type="button" class="analyse-subtab-btn analyse-subtab-btn--sm" data-view="saison" onclick="switchStAnsicht('saison')">Saisonvergleich</button>
+                  <button type="button" class="analyse-subtab-btn analyse-subtab-btn--sm" data-view="frequenz" onclick="switchStAnsicht('frequenz')">Frequenz</button>
+                </div>
+              </div>
+              <!-- Kontrollzeile: Filter links, Jahres-Chips mittig -->
+              <div class="bl-controls-row">
+                <div id="statistikTopBar">
+                  <div style="position:relative;">
+                    <button class="lt-btn" id="stFilterBtn" onclick="toggleStFilterDropdown()">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                      Filter
+                      <span class="lt-badge" id="stFilterBadge" style="display:none;">0</span>
+                    </button>
+                    <div class="lt-dropdown" id="stFilterDropdown" style="left:0;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1.5px solid #e2e8f0;">
+                        <span style="font-size:0.75em;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;">Filter</span>
+                        <button class="dropdown-reset-btn" onclick="statistikFilterZuruecksetzen();updateStFilterUI()">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.39"/></svg>
+                          zurücksetzen
+                        </button>
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Disziplin</div>
+                        <select id="statistikFilterDisziplin" onchange="updateStFilterUI()"><option value="">– Alle –</option></select>
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Zeitraum</div>
+                        <select id="statistikFilterZeitraum" onchange="onStZeitraumChange()">
+                          <option value="">– Alle –</option>
+                          <option value="custom">Benutzerdefiniert</option>
+                        </select>
+                        <div id="statistikCustomDateRange" style="display:none;margin-top:6px;">
+                          <div class="ls-date-pair">
+                            <label>Von<input type="date" id="statistikFilterVon" onchange="updateStFilterUI()"></label>
+                            <label>Bis<input type="date" id="statistikFilterBis" onchange="updateStFilterUI()"></label>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Ort</div>
-                      <input type="text" id="statistikFilterOrt" placeholder="Suche…" oninput="updateStFilterUI()">
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Wettkampf</div>
-                      <input type="text" id="statistikFilterWK" placeholder="Suche…" oninput="updateStFilterUI()">
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Altersklasse</div>
-                      <input type="text" id="statistikFilterAK" placeholder="Suche…" oninput="updateStFilterUI()">
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Saison</div>
-                      <select id="statistikFilterTyp" onchange="updateStFilterUI()">
-                        <option value="">– Alle –</option>
-                        <option value="h">Halle</option>
-                        <option value="f">Freiluft</option>
-                      </select>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Meisterschaft</div>
-                      <select id="statistikFilterMS" onchange="updateStFilterUI()"><option value="">– Alle –</option></select>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Ort</div>
+                        <input type="text" id="statistikFilterOrt" placeholder="Suche…" oninput="updateStFilterUI()">
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Wettkampf</div>
+                        <input type="text" id="statistikFilterWK" placeholder="Suche…" oninput="updateStFilterUI()">
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Altersklasse</div>
+                        <input type="text" id="statistikFilterAK" placeholder="Suche…" oninput="updateStFilterUI()">
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Saison</div>
+                        <select id="statistikFilterTyp" onchange="updateStFilterUI()">
+                          <option value="">– Alle –</option>
+                          <option value="h">Halle</option>
+                          <option value="f">Freiluft</option>
+                        </select>
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Meisterschaft</div>
+                        <select id="statistikFilterMS" onchange="updateStFilterUI()"><option value="">– Alle –</option></select>
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div class="bl-controls-center">
+                  <div id="stJahresChips" class="bl-jahr-chips"></div>
+                </div>
+                <div aria-hidden="true"></div>
               </div>
               <div id="stChipsContainer" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;padding:2px 0;"></div>
-
-              <div class="statistik-buttons-grid">
-                <button class="statistik-btn" onclick="_runStatistik(zeigeLeistungsTabelle)">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
-                  <div class="statistik-btn-text">Top-Leistungen</div>
-                </button>
-                <button class="statistik-btn" onclick="_runStatistik(berechneDurchschnitt, 'leistung')">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
-                  <div class="statistik-btn-text">Ø Leistung</div>
-                </button>
-                <button class="statistik-btn" onclick="_runStatistik(berechneDurchschnitt, 'platzierung')">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg></div>
-                  <div class="statistik-btn-text">Ø Platzierung</div>
-                </button>
-                <button class="statistik-btn" onclick="_runStatistik(berechneErfolgsquote)">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
-                  <div class="statistik-btn-text">Erfolgsquote</div>
-                </button>
-                <button class="statistik-btn" onclick="_runStatistik(zeigeSaisonvergleich)">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
-                  <div class="statistik-btn-text">Saisonvergleich</div>
-                </button>
-                <button class="statistik-btn" onclick="_runStatistik(zeigeWettkampffrequenz)">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
-                  <div class="statistik-btn-text">Wettkampffrequenz</div>
-                </button>
-              </div>
               <div id="analyseAusgabe" style="margin-top: 20px;"></div>
             </div>
 
@@ -10566,87 +11216,86 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             <div id="analyseSection-bestleistungen" class="analyse-section" style="display:none">
               <h3 class="analyse-section-title">Bestleistungen</h3>
 
-              <div id="bestleistungenTopBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-                <div style="position:relative;">
-                  <button class="lt-btn" id="blFilterBtn" onclick="toggleBlFilterDropdown()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                    Filter
-                    <span class="lt-badge" id="blFilterBadge" style="display:none;">0</span>
-                  </button>
-                  <div class="lt-dropdown" id="blFilterDropdown" style="left:0;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1.5px solid #e2e8f0;">
-                      <span style="font-size:0.75em;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;">Filter</span>
-                      <button class="dropdown-reset-btn" onclick="bestleistungenFilterZuruecksetzen();updateBlFilterUI()">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.39"/></svg>
-                        zurücksetzen
-                      </button>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Disziplin</div>
-                      <select id="bestleistungenFilterDisziplin" onchange="updateBlFilterUI()"><option value="">– Alle –</option></select>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Zeitraum</div>
-                      <select id="bestleistungenFilterZeitraum" onchange="onBlZeitraumChange()">
-                        <option value="">– Alle –</option>
-                        <option value="custom">Benutzerdefiniert</option>
-                      </select>
-                      <div id="bestleistungenCustomDateRange" style="display:none;margin-top:6px;">
-                        <div class="ls-date-pair">
-                          <label>Von<input type="date" id="bestleistungenFilterVon" onchange="updateBlFilterUI()"></label>
-                          <label>Bis<input type="date" id="bestleistungenFilterBis" onchange="updateBlFilterUI()"></label>
+              <!-- Ansicht-Umschalter: PBs / SBs -->
+              <div class="analyse-view-toggle-wrap">
+                <div class="analyse-pill-toggle analyse-view-toggle">
+                  <button type="button" id="blViewBtn-pb" class="analyse-subtab-btn active" onclick="switchBlAnsicht('pb')">Persönliche Bestleistungen</button>
+                  <button type="button" id="blViewBtn-sb" class="analyse-subtab-btn" onclick="switchBlAnsicht('sb')">Saisonbestleistungen</button>
+                </div>
+              </div>
+              <!-- Kontrollzeile: Filter links, Timeline-Umschalter bzw. Jahres-Chips mittig -->
+              <div class="bl-controls-row">
+                <div id="bestleistungenTopBar">
+                  <div style="position:relative;">
+                    <button class="lt-btn" id="blFilterBtn" onclick="toggleBlFilterDropdown()">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                      Filter
+                      <span class="lt-badge" id="blFilterBadge" style="display:none;">0</span>
+                    </button>
+                    <div class="lt-dropdown" id="blFilterDropdown" style="left:0;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1.5px solid #e2e8f0;">
+                        <span style="font-size:0.75em;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;">Filter</span>
+                        <button class="dropdown-reset-btn" onclick="bestleistungenFilterZuruecksetzen();updateBlFilterUI()">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.39"/></svg>
+                          zurücksetzen
+                        </button>
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Disziplin</div>
+                        <select id="bestleistungenFilterDisziplin" onchange="updateBlFilterUI()"><option value="">– Alle –</option></select>
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Zeitraum</div>
+                        <select id="bestleistungenFilterZeitraum" onchange="onBlZeitraumChange()">
+                          <option value="">– Alle –</option>
+                          <option value="custom">Benutzerdefiniert</option>
+                        </select>
+                        <div id="bestleistungenCustomDateRange" style="display:none;margin-top:6px;">
+                          <div class="ls-date-pair">
+                            <label>Von<input type="date" id="bestleistungenFilterVon" onchange="updateBlFilterUI()"></label>
+                            <label>Bis<input type="date" id="bestleistungenFilterBis" onchange="updateBlFilterUI()"></label>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Ort</div>
-                      <input type="text" id="bestleistungenFilterOrt" placeholder="Suche…" oninput="updateBlFilterUI()">
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Wettkampf</div>
-                      <input type="text" id="bestleistungenFilterWK" placeholder="Suche…" oninput="updateBlFilterUI()">
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Altersklasse</div>
-                      <input type="text" id="bestleistungenFilterAK" placeholder="Suche…" oninput="updateBlFilterUI()">
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Saison</div>
-                      <select id="bestleistungenFilterTyp" onchange="updateBlFilterUI()">
-                        <option value="">– Alle –</option>
-                        <option value="h">Halle</option>
-                        <option value="f">Freiluft</option>
-                      </select>
-                    </div>
-                    <div class="ls-fg">
-                      <div class="ls-fg-label">Meisterschaft</div>
-                      <select id="bestleistungenFilterMS" onchange="updateBlFilterUI()"><option value="">– Alle –</option></select>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Ort</div>
+                        <input type="text" id="bestleistungenFilterOrt" placeholder="Suche…" oninput="updateBlFilterUI()">
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Wettkampf</div>
+                        <input type="text" id="bestleistungenFilterWK" placeholder="Suche…" oninput="updateBlFilterUI()">
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Altersklasse</div>
+                        <input type="text" id="bestleistungenFilterAK" placeholder="Suche…" oninput="updateBlFilterUI()">
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Saison</div>
+                        <select id="bestleistungenFilterTyp" onchange="updateBlFilterUI()">
+                          <option value="">– Alle –</option>
+                          <option value="h">Halle</option>
+                          <option value="f">Freiluft</option>
+                        </select>
+                      </div>
+                      <div class="ls-fg">
+                        <div class="ls-fg-label">Meisterschaft</div>
+                        <select id="bestleistungenFilterMS" onchange="updateBlFilterUI()"><option value="">– Alle –</option></select>
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div class="bl-controls-center">
+                  <div id="blPbModusWrap" class="bl-pb-modus">
+                    <label class="analyse-check">
+                      <input type="checkbox" id="blTimelineCheck" onchange="toggleBlTimeline()">
+                      Als PB-Timeline anzeigen
+                    </label>
+                  </div>
+                  <div id="blJahresChips" class="bl-jahr-chips" style="display:none;"></div>
+                </div>
+                <div aria-hidden="true"></div>
               </div>
               <div id="blChipsContainer" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;padding:2px 0;"></div>
-              <div class="statistik-buttons-grid">
-                <button class="statistik-btn bestleistungen-btn-gold" onclick="zeigePBs()">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 21 12 21 16 21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 4H4a1 1 0 0 0-1 1v3a5 5 0 0 0 5 5"/><path d="M17 4h3a1 1 0 0 1 1 1v3a5 5 0 0 0-5 5"/><path d="M7 4h10v8a5 5 0 0 1-10 0V4z"/></svg></div>
-                  <div class="statistik-btn-text">Persönliche Bestleistungen</div>
-                </button>
-                <button class="statistik-btn bestleistungen-btn-blue" onclick="zeigeSBsDirekt()">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
-                  <div class="statistik-btn-text">Saisonbestleistungen</div>
-                </button>
-                <button class="statistik-btn bestleistungen-btn-green" onclick="zeigePBTimeline()">
-                  <div class="statistik-btn-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg></div>
-                  <div class="statistik-btn-text">PB-Timeline</div>
-                </button>
-              </div>
-              <!-- Inline SB-Jahresauswahl (kein Popup) -->
-              <div id="sbInlineJahrWrap" style="display:none;margin-top:14px;padding:10px 14px;background:#f2f6fa;border:1px solid #dde6f5;border-radius:8px;">
-                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                  <label style="font-size:0.85em;font-weight:600;color:#1e3a8a;white-space:nowrap;">Jahr:</label>
-                  <select id="sbJahrInline" onchange="_ladeSBsDirektNachJahr(this.value)" style="padding:5px 10px;border-radius:6px;border:1.5px solid #dde6f5;font-size:0.88em;color:#1e3a8a;background:white;cursor:pointer;font-weight:500;"></select>
-                </div>
-              </div>
               <div id="bestleistungenAusgabe" style="margin-top: 14px;"></div>
             </div>
 
@@ -10691,13 +11340,20 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
           <!-- DETAIL VIEW -->
           <div id="wkDetailView" style="display:none;">
-            <div style="margin-bottom:14px;">
-              <button id="wkBackBtn" onclick="wkZurueck()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:none;border:1.5px solid rgba(255,255,255,0.5);border-radius:8px;cursor:pointer;font-size:0.88em;color:#ffffff;font-weight:600;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='none'">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Zurück
-              </button>
+            <div class="wk-detail-card">
+              <div class="wk-detail-header">
+                <button id="wkBackBtn" onclick="wkZurueck()" class="settings-back-btn" aria-label="Zurück zur Liste">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <span class="wk-detail-header-title">
+                  <svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 21 12 21 16 21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 4H4a1 1 0 0 0-1 1v3a5 5 0 0 0 5 5"/><path d="M17 4h3a1 1 0 0 1 1 1v3a5 5 0 0 0-5 5"/><path d="M7 4h10v8a5 5 0 0 1-10 0V4z"/></svg>
+                  Wettkampf-Details
+                </span>
+              </div>
+              <div id="wkDetailInfo" class="wk-detail-section"></div>
+              <div id="wkDetailLeistungen" class="wk-detail-section"></div>
+              <div id="wkDetailMedien" class="wk-detail-section" style="display:none;"></div>
             </div>
-            <div id="wkDetailInfo" style="background:#f2f6fa;border:1px solid #dde6f5;border-radius:10px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);"></div>
-            <div id="wkDetailLeistungen" style="background:#f2f6fa;border-radius:10px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,0.08);border:1px solid #e8eef5;"></div>
           </div>
 
           </div>
@@ -10799,7 +11455,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 </div>
 
 <!-- Modal: Ort bearbeiten -->
-<div id="ortBearbeitenModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10003; justify-content:center; align-items:center; padding:20px;" onclick="if(event.target===this) closeOrtBearbeiten()">
+<div id="ortBearbeitenModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99600; justify-content:center; align-items:center; padding:20px;" onclick="if(event.target===this) closeOrtBearbeiten()">
   <div style="background:#f2f6fa; padding:25px; border-radius:12px; max-width:440px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
       <h2 style="color:navy; margin:0; font-size:1.1em;"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Ort bearbeiten</h2>
@@ -11229,7 +11885,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
     <!-- Footer -->
     <footer id="appFooter" class="app-footer">
-      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.3.1</span></span>
+      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.3.2</span></span>
       <nav style="display:flex; gap:14px;">
         <a href="impressum.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Impressum</a>
         <a href="datenschutz.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Datenschutz</a>
@@ -12692,26 +13348,13 @@ function befuelleJahrDropdowns() {
   console.log("Befülle Jahr-Dropdowns mit:", verfuegbareJahre);
   
   // Befülle Statistik-Dropdown
-  const statistikZeitraum = document.getElementById('statistikFilterZeitraum');
-  if(statistikZeitraum) {
-    // Behalte die ersten beiden Optionen, füge Jahre hinzu
-    const aktuellerWert = statistikZeitraum.value;
-    statistikZeitraum.innerHTML = '<option value="">– Alle –</option>' +
-      '<option value="custom">Benutzerdefiniert</option>' +
-      verfuegbareJahre.map(j => `<option value="${j}">${j}</option>`).join('');
-    // Setze den Wert zurück falls er vorher gesetzt war
-    if (aktuellerWert) statistikZeitraum.value = aktuellerWert;
-  }
+  // Statistiken: Jahre laufen über die Jahres-Chips, der Zeitraum-Filter
+  // bietet nur noch "Alle" und "Benutzerdefiniert" (statisch im HTML)
+  renderStJahresChips();
   
   // Befülle Bestleistungen-Dropdown
-  const bestleistungenZeitraum = document.getElementById('bestleistungenFilterZeitraum');
-  if(bestleistungenZeitraum) {
-    const aktuellerWert = bestleistungenZeitraum.value;
-    bestleistungenZeitraum.innerHTML = '<option value="">– Alle –</option>' +
-      '<option value="custom">Benutzerdefiniert</option>' +
-      verfuegbareJahre.map(j => `<option value="${j}">${j}</option>`).join('');
-    if (aktuellerWert) bestleistungenZeitraum.value = aktuellerWert;
-  }
+  // Bestleistungen: Jahre laufen über die Jahres-Chips (SB-Ansicht),
+  // der Zeitraum-Filter bietet nur noch "Alle" und "Benutzerdefiniert" (statisch im HTML)
 
   // Befülle Analyse-Entwicklungen-Dropdown
   const analyseFilterJahr = document.getElementById('analyseFilterJahr');
@@ -13175,7 +13818,19 @@ async function ladeLeistungen(optionen) {
   if(!colsForQuery.includes('datum')) colsForQuery.push('datum'); // immer laden für korrekte Anzeige + Jahres-Trenner
   if(!colsForQuery.includes('einheit')) colsForQuery.push('einheit'); // immer laden für korrekte Einheits-Anzeige
 
-  let query = supabaseClient.schema("la").from("leistung").select(colsForQuery.join(",") + ",score,status,wettkampf_id,wettkampf(id,bezeichnung,startdatum,enddatum,ort,ort_display,saison)");
+  // Wettkampf-basierte Filter (Ort, Wettkampf, Saison, Datum/Jahr) brauchen einen
+  // !inner-Join — sonst filtert PostgREST eingebettete Spalten nicht auf Zeilenebene
+  const WETTKAMPF_FILTER_MAP = { ort: 'wettkampf.ort', wk_bz: 'wettkampf.bezeichnung', typ: 'wettkampf.saison' };
+  const _wkFilterAktiv = Array.from(document.querySelectorAll(
+    "#filterContainer [data-filter], #filterContainer [data-filter-dropdown], #filterContainer [data-filter-jahr], #filterContainer [data-filter-from], #filterContainer [data-filter-to]"
+  )).some(i => i.value && (
+    (i.dataset.filter && WETTKAMPF_FILTER_MAP[i.dataset.filter]) ||
+    (i.dataset.filterDropdown && WETTKAMPF_FILTER_MAP[i.dataset.filterDropdown]) ||
+    i.dataset.filterJahr !== undefined ||
+    i.dataset.filterFrom === 'datum' || i.dataset.filterTo === 'datum'
+  ));
+  const _wkJoin = _wkFilterAktiv ? 'wettkampf!inner' : 'wettkampf';
+  let query = supabaseClient.schema("la").from("leistung").select(colsForQuery.join(",") + ",score,status,wettkampf_id," + _wkJoin + "(id,bezeichnung,startdatum,enddatum,ort,ort_display,saison)");
 
   // Verwende ausgewählten Athleten
   if(selectedAthleteId) query = query.eq("athlet_id", selectedAthleteId);
@@ -13228,21 +13883,33 @@ async function ladeLeistungen(optionen) {
         const op = document.querySelector(`select[data-op="${spalte}"]`)?.value;
         if(op==="gte") query = query.gte(spalte, wert);
         else if(op==="lte") query = query.lte(spalte, wert);
+      } else if (WETTKAMPF_FILTER_MAP[spalte]) {
+        // Ort/Wettkampfbezeichnung liegen auf der Wettkampftabelle
+        query = query.filter(WETTKAMPF_FILTER_MAP[spalte], "ilike", `%${wert}%`);
       } else {
         query = query.ilike(spalte, `%${wert}%`);
       }
     }
     else if(input.dataset.filterDropdown){
       const spalte = input.dataset.filterDropdown;
-      if(wert) query = query.eq(spalte, wert);
+      if(!wert) continue;
+      // Saison (typ) liegt auf der Wettkampftabelle
+      if (WETTKAMPF_FILTER_MAP[spalte]) query = query.eq(WETTKAMPF_FILTER_MAP[spalte], wert);
+      else query = query.eq(spalte, wert);
     }
     else if(input.dataset.filterJahr){
       const jahr = wert;
-      // Datum liegt jetzt auf wettkampf.startdatum
+      // Datum liegt auf wettkampf.startdatum
       query = query.gte('wettkampf.startdatum', `${jahr}-01-01`).lte('wettkampf.startdatum', `${jahr}-12-31`);
     }
-    else if(input.dataset.filterFrom) query = query.gte(input.dataset.filterFrom, wert);
-    else if(input.dataset.filterTo) query = query.lte(input.dataset.filterTo, wert);
+    else if(input.dataset.filterFrom) {
+      const sp = input.dataset.filterFrom === 'datum' ? 'wettkampf.startdatum' : input.dataset.filterFrom;
+      query = query.gte(sp, wert);
+    }
+    else if(input.dataset.filterTo) {
+      const sp = input.dataset.filterTo === 'datum' ? 'wettkampf.startdatum' : input.dataset.filterTo;
+      query = query.lte(sp, wert);
+    }
   }
 
   // Wende Disziplin-Filter an
@@ -13297,6 +13964,10 @@ async function ladeLeistungen(optionen) {
       .eq("athlet_id", selectedAthleteId);
     // Für PB-Berechnung und Analyse nur abgeschlossene Leistungen verwenden (Fallback: kein Status = abgeschlossen)
     alleLeistungenFuerPBs = (allData || []).filter(l => !l.status || l.status === 'abgeschlossen');
+    // Leistungen mit Medien (für Kamera-Indikator in der Tabelle)
+    const { data: medienIds } = await supabaseClient.schema('la').from('leistung_medien')
+      .select('leistung_id').eq('athlet_id', selectedAthleteId);
+    _medienLeistungIds = new Set((medienIds || []).map(m => m.leistung_id));
     // Kalender-Daten bei Athletenwechsel neu laden
     if (typeof dbLoadTemplates === 'function') await dbLoadTemplates(selectedAthleteId);
     if (typeof dbLoadEvents    === 'function') await dbLoadEvents(selectedAthleteId);
@@ -13371,7 +14042,7 @@ async function zeigeLeistungsTabelle() {
   
   // Hole alle Filter unter Statistiken
   const filterDisziplin = document.getElementById("statistikFilterDisziplin").value;
-  const filterZeitraum = document.getElementById("statistikFilterZeitraum").value;
+  const filterZeitraum = _stZeitraumWert();
   const ort = document.getElementById("statistikFilterOrt").value;
   const wk = document.getElementById("statistikFilterWK").value;
   const ak = document.getElementById("statistikFilterAK").value;
@@ -13379,8 +14050,9 @@ async function zeigeLeistungsTabelle() {
   const ms = document.getElementById("statistikFilterMS").value;
 
   // Baue Query mit allen Filtern - WICHTIG: score aus der Datenbank holen
+  const _wkJoinTop = _stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient.schema("la").from("leistung")
-    .select("id, datum, ort, disziplin, leistung, einheit, score, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select(`id, datum, disziplin, leistung, einheit, score, wettkampf_id, ${_wkJoinTop}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null)
     .not("score", "is", null); // Nur Leistungen mit Score
@@ -13434,7 +14106,6 @@ function renderScoreTable() {
       <div class="results-count"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> ${data.length} ${data.length === 1 ? 'Ergebnis' : 'Ergebnisse'}</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="export-btn" onclick="exportiereAnalyseCSV()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="12 18 12 12"/><polyline points="9 15 12 12 15 15"/></svg> Als CSV exportieren</button>
-        <button class="results-close-btn" onclick="document.getElementById('analyseAusgabe').innerHTML='';enableTableResize();">×</button>
       </div>
     </div>
     <div class="table-wrapper">
@@ -13545,16 +14216,17 @@ async function berechneDurchschnitt(typ) {
   if (!athletId) { alert("Bitte wählen Sie zuerst einen Athleten aus!"); return; }
 
   const filterDisziplin = document.getElementById("statistikFilterDisziplin").value;
-  const filterZeitraum  = document.getElementById("statistikFilterZeitraum").value;
+  const filterZeitraum  = _stZeitraumWert();
   const ort   = document.getElementById("statistikFilterOrt").value;
   const wk    = document.getElementById("statistikFilterWK").value;
   const ak    = document.getElementById("statistikFilterAK").value;
   const saison = document.getElementById("statistikFilterTyp").value;
   const ms    = document.getElementById("statistikFilterMS").value;
 
+  const _wkJoinAvg = _stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient.schema("la").from("leistung")
     .select(`leistung, platzierung, disziplin, wettkampf_id,
-             wettkampf(id, bezeichnung, startdatum, ort, ort_display, saison)`)
+             ${_wkJoinAvg}(id, bezeichnung, startdatum, ort, ort_display, saison)`)
     .eq("athlet_id", athletId)
     .not(typ, "is", null);
 
@@ -13631,9 +14303,6 @@ async function berechneDurchschnitt(typ) {
   const html = `
     <div class="results-info">
       <div class="results-count">${colLabel} · ${rows.length} Disziplinen${zeitraumText !== 'Gesamt' ? ' · ' + zeitraumText : ''}</div>
-      <button class="results-close-btn" onclick="document.getElementById('analyseAusgabe').innerHTML='';enableTableResize();">
-        ×
-      </button>
     </div>
     <div class="table-wrapper"><table>
       <thead><tr>
@@ -14018,7 +14687,11 @@ function zeigeTabelleMitPBs(angezeigteDaten, vollstaendigeDaten, ziel, sortierba
     const istPB = pbSet.has(currentKey);
     const leistungId = vollstaendigeDaten[index].id || index;
     
-    html += `<tr${istPB ? ' class="pb-row"' : ''} data-leistung-id="${leistungId}">`;
+    const _trKlassen = [
+      istPB ? 'pb-row' : '',
+      (ziel === 'leistungenAusgabe' && typeof _medienLeistungIds !== 'undefined' && _medienLeistungIds.has(vollstaendigeDaten[index].id)) ? 'hat-medien' : ''
+    ].filter(Boolean).join(' ');
+    html += `<tr${_trKlassen ? ` class="${_trKlassen}"` : ''} data-leistung-id="${leistungId}">`;
 
     Object.keys(z).forEach(sp=>{
       let wert = z[sp];
@@ -14349,9 +15022,9 @@ function sortiereNachDisziplinTyp(a, b) {
 
 /* ================= PBS ANZEIGEN ================= */
 async function zeigePBs() {
-  // Inline SB-Jahresselektor verstecken wenn PBs angezeigt werden
-  const sbWrap = document.getElementById('sbInlineJahrWrap');
-  if (sbWrap) sbWrap.style.display = 'none';
+  _blAktuelleAnsicht = 'pb';
+  _blPbTimeline = false;
+  _syncBlAnsichtUI('pb');
 
   if (!selectedAthleteId) {
     alert('Bitte wählen Sie zuerst einen Athleten aus!');
@@ -14370,9 +15043,10 @@ async function zeigePBs() {
   }
   
   // Lade alle Leistungen des Athleten
+  const _wkJoinPB = (istAnalyseTabAktiv && _blWkFilterAktiv()) ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select(`*, wettkampf_id, ${_wkJoinPB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null); // Nur Einträge mit Leistung
   
@@ -14513,7 +15187,6 @@ function zeigePBsSBsTabelle(daten, icon, titel, jahr = null, mitJahrTrennung = f
                       <div class="results-count">${titelText}</div>
                       <div style="display:flex;gap:8px;align-items:center;">
                         <button class="export-btn" onclick="exportiereBestleistungenCSV()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="12 18 12 12"/><polyline points="9 15 12 12 15 15"/></svg> Als CSV exportieren</button>
-                        <button class="results-close-btn" onclick="document.getElementById('bestleistungenAusgabe').innerHTML='';enableTableResize();">×</button>
                       </div>
                     </div>`;
   
@@ -14656,20 +15329,8 @@ function zeigeSBsDirekt(vorausgewaehltesJahr) {
     alert('Bitte wählen Sie zuerst einen Athleten aus!');
     return;
   }
-  // Zeige & befülle inline Jahr-Selektor
-  const wrap = document.getElementById('sbInlineJahrWrap');
-  const select = document.getElementById('sbJahrInline');
-  if (wrap && select) {
-    // Standard: "Alle Jahre" vorausgewählt, außer explizit anderes Jahr übergeben
-    const aktJahr = vorausgewaehltesJahr || 'alle';
-    select.innerHTML = [
-      '<option value="alle">Alle Jahre</option>',
-      ...(verfuegbareJahre || []).map(j => `<option value="${j}">${j}</option>`)
-    ].join('');
-    select.value = String(aktJahr);
-    wrap.style.display = 'block';
-  }
-  _ladeSBsDirektNachJahr(select ? select.value : 'alle');
+  _blSbJahr = vorausgewaehltesJahr ? String(vorausgewaehltesJahr) : 'alle';
+  switchBlAnsicht('sb');
 }
 
 async function _ladeSBsDirektNachJahr(jahr) {
@@ -14760,9 +15421,10 @@ async function zeigeSBs() {
   
   // Lade alle Leistungen des Athleten (Jahresfilter client-seitig, da PostgREST
   // embedded-Spalten wie wettkampf.startdatum nicht als Row-Filter unterstützt)
+  const _wkJoinSB = (istAnalyseTabAktiv && _blWkFilterAktiv()) ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select(`*, wettkampf_id, ${_wkJoinSB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null); // Nur Einträge mit Leistung
   
@@ -14868,9 +15530,10 @@ async function zeigeAlleSBs() {
 
   // Lade alle Leistungen des Athleten
   const istAnalyseTabAktivAllSBs = document.getElementById('analyseTab').classList.contains('active');
+  const _wkJoinAllSB = (istAnalyseTabAktivAllSBs && _blWkFilterAktiv()) ? "wettkampf!inner" : "wettkampf";
   let queryAllSBs = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select(`*, wettkampf_id, ${_wkJoinAllSB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null);
 
@@ -15092,6 +15755,9 @@ async function ladeDashboardDaten() {
     nameSpan.textContent = selectedAthleteName || 'Athlet';
     welcomeDiv.style.display = 'block';
   }
+
+  // Medien-Strip (läuft parallel, blockiert das Dashboard nicht)
+  renderDashboardMedien();
 
   // Lade Athleten-Daten für zusätzliche Infos
   const { data: athletData, error: athletError } = await supabaseClient
@@ -15460,22 +16126,30 @@ let _activeDashTab = 'entwicklung';
 // PBs sort mode: 'disziplin' (default) or 'score' (Top-Bestleistungen)
 let _dashPBSortMode = 'disziplin';
 function switchDashTab(tabName) {
-  _activeDashTab = tabName;
-  const panes = { entwicklung: 'dashPaneEntwicklung', karte: 'dashPaneKarte' };
-  Object.entries(panes).forEach(([key, id]) => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = key === tabName ? 'block' : 'none';
-  });
-  document.querySelectorAll('.dash-inner-tab-btn').forEach(btn => {
-    const m = btn.getAttribute('onclick').match(/switchDashTab\('(\w+)'\)/);
-    if (m) btn.classList.toggle('active', m[1] === tabName);
-  });
-  if (tabName === 'karte' && typeof _wettkampfLeafletMap !== 'undefined' && _wettkampfLeafletMap) {
-    setTimeout(() => {
+  // Legacy: 'karte' öffnet jetzt das Karten-Popup, 'entwicklung' ist immer sichtbar
+  if (tabName === 'karte') { openDashMapPopup(); return; }
+  _activeDashTab = 'entwicklung';
+}
+
+/* ── Wettkampforte-Karte als Popup ── */
+function openDashMapPopup() {
+  const p = document.getElementById('dashMapPopup');
+  if (!p) return;
+  p.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  // Leaflet braucht invalidateSize, sobald der Container sichtbar ist
+  setTimeout(() => {
+    if (typeof _wettkampfLeafletMap !== 'undefined' && _wettkampfLeafletMap) {
       _wettkampfLeafletMap.invalidateSize();
-      resetMapZoom();
-    }, 60);
-  }
+      if (typeof resetMapZoom === 'function') resetMapZoom();
+    }
+  }, 80);
+}
+
+function closeDashMapPopup() {
+  const p = document.getElementById('dashMapPopup');
+  if (p) p.classList.remove('open');
+  document.body.style.overflow = '';
 }
 
 // ── Dashboard Stat-Popups ──────────────────────────────────────────────────
@@ -15707,7 +16381,9 @@ function switchTab(tabName) {
     const headerBtn = headerTabButtons[3];
     if(tab) {
       tab.classList.add('active');
-      console.log('Activated analyseTab');
+      // Aktive Analyse-Sektion direkt rendern (inkl. Auto-Disziplinwahl)
+      const activeNav = document.querySelector('.analyse-nav-item.active');
+      switchAnalyseSection(activeNav && activeNav.dataset.section ? activeNav.dataset.section : 'entwicklungen');
     }
     if(headerBtn) {
       headerBtn.classList.add('active');
@@ -15738,6 +16414,7 @@ function switchTab(tabName) {
     if (_sc) _sc.style.minHeight = '0';
     _syncSettingsPage();
     renderMeineDisziplinenSettings();
+    renderSpeicherSettings();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } else if(tabName === 'kalender') {
     const tab = document.getElementById('kalenderTab');
@@ -16052,8 +16729,9 @@ async function zeigeDiagramm() {
     const useVergleichsScores = vergleichsModus && vergleichsDisziplin && vergleichsDisziplin !== disziplin;
 
     // Query für erste Disziplin  
+    const _wkJoinD = (jahr || from || to) ? "wettkampf!inner" : "wettkampf";
     let query1 = supabaseClient.schema("la").from("leistung")
-        .select("id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+        .select(`id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, ${_wkJoinD}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
         .eq("athlet_id", athletId)
         .eq("disziplin", disziplin)
 if (jahr) {
@@ -16175,7 +16853,7 @@ if (jahr) {
     
     if (vergleichsModus && vergleichsDisziplin) {
         let query2 = supabaseClient.schema("la").from("leistung")
-            .select("id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+            .select(`id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, ${_wkJoinD}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
             .eq("athlet_id", athletId)
             .eq("disziplin", vergleichsDisziplin)
 if (jahr) {
@@ -16869,11 +17547,12 @@ function toggleVergleichsModus() {
         // Primäre Disziplin auf Score-Disziplinen beschränken
         if (analyseDisziplinSelect) {
             const aktuellerWert = analyseDisziplinSelect.value;
-            analyseDisziplinSelect.innerHTML = '<option value="">– Disziplin wählen –</option>' +
-                disziplinenListe.filter(d => hatScoreBerechnung(d)).map(d => `<option value="${d}">${d}</option>`).join('');
+            analyseDisziplinSelect.innerHTML = _diszOptHtml(
+                disziplinenListe.filter(d => hatScoreBerechnung(d)), '– Disziplin wählen –');
             if (aktuellerWert && hatScoreBerechnung(aktuellerWert)) {
                 analyseDisziplinSelect.value = aktuellerWert;
             }
+            _waehleErsteDisziplin(analyseDisziplinSelect);
         }
     } else {
         container.style.display = 'none';
@@ -16885,6 +17564,7 @@ function toggleVergleichsModus() {
             if (aktuellerWert && disziplinenListe.includes(aktuellerWert)) {
                 analyseDisziplinSelect.value = aktuellerWert;
             }
+            _waehleErsteDisziplin(analyseDisziplinSelect);
         }
     }
     zeigeDiagramm();
@@ -16924,10 +17604,14 @@ async function zeigeSBDiagramm() {
     const disziplin = document.getElementById("sbDisziplin").value;
     
     if (!disziplin) {
-        const c = document.getElementById('sbDiagrammContainer');
-        if (c) c.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:40px 0;font-size:0.95em;">Bitte eine Disziplin wählen</p>';
+        document.getElementById('sbDiagrammContainer').style.display = 'none';
+        document.getElementById('sbDiagrammOptionsContainer').style.display = 'none';
+        const sbEmpty = document.getElementById('sbEmptyState');
+        if (sbEmpty) sbEmpty.style.display = 'block';
         return;
     }
+    const _sbEmptyEl = document.getElementById('sbEmptyState');
+    if (_sbEmptyEl) _sbEmptyEl.style.display = 'none';
 
     // Prüfe ob Vergleichsmodus aktiv ist
     const vergleichsModus = document.getElementById("sbVergleichsModus").checked;
@@ -16943,8 +17627,9 @@ async function zeigeSBDiagramm() {
     const filterJahr = document.getElementById("sbFilterJahr").value;
 
     // Query für erste Disziplin (alle Leistungen) 
+    const _wkJoinSBD = (filterJahr || filterFrom || filterTo) ? "wettkampf!inner" : "wettkampf";
     let query = supabaseClient.schema("la").from("leistung")
-        .select("leistung, score, wettkampf_id, wettkampf(startdatum)")
+        .select(`leistung, score, wettkampf_id, ${_wkJoinSBD}(startdatum)`)
         .eq("athlet_id", athletId)
         .eq("disziplin", disziplin)
     if (filterJahr) {
@@ -17046,7 +17731,7 @@ async function zeigeSBDiagramm() {
     
     if (vergleichsModus && vergleichsDisziplin && vergleichsDisziplin !== disziplin) {
         let query2 = supabaseClient.schema("la").from("leistung")
-            .select("leistung, score, wettkampf_id, wettkampf(startdatum)")
+            .select(`leistung, score, wettkampf_id, ${_wkJoinSBD}(startdatum)`)
             .eq("athlet_id", athletId)
             .eq("disziplin", vergleichsDisziplin)
         if (filterJahr) {
@@ -17522,11 +18207,12 @@ function toggleSBVergleichsModus() {
         // Primäre Disziplin auf Score-Disziplinen beschränken
         if (sbDisziplinSelect) {
             const aktuellerWert = sbDisziplinSelect.value;
-            sbDisziplinSelect.innerHTML = '<option value="">– Disziplin wählen –</option>' +
-                disziplinenListe.filter(d => hatScoreBerechnung(d)).map(d => `<option value="${d}">${d}</option>`).join('');
+            sbDisziplinSelect.innerHTML = _diszOptHtml(
+                disziplinenListe.filter(d => hatScoreBerechnung(d)), '– Disziplin wählen –');
             if (aktuellerWert && hatScoreBerechnung(aktuellerWert)) {
                 sbDisziplinSelect.value = aktuellerWert;
             }
+            _waehleErsteDisziplin(sbDisziplinSelect);
         }
     } else {
         container.style.display = 'none';
@@ -17538,6 +18224,7 @@ function toggleSBVergleichsModus() {
             if (aktuellerWert && disziplinenListe.includes(aktuellerWert)) {
                 sbDisziplinSelect.value = aktuellerWert;
             }
+            _waehleErsteDisziplin(sbDisziplinSelect);
         }
     }
     zeigeSBDiagramm();
@@ -17555,20 +18242,18 @@ async function zeigePrognoseDiagramm() {
     }
     const disziplin = document.getElementById("prognoseDisziplin").value;
     if (!disziplin) {
-        alert("Bitte eine Disziplin auswählen.");
+        zeigePrognoseEmptyState();
         return;
     }
     const datenbasisMonate = parseInt(document.getElementById("prognoseDatenbasis").value);
     const prognoseMonate   = parseInt(document.getElementById("prognoseHorizont").value);
 
     // Sofort anzeigen + Lade-Hinweis
+    const _prognoseEmptyEl = document.getElementById('prognoseEmptyState');
+    if (_prognoseEmptyEl) _prognoseEmptyEl.style.display = 'none';
     document.getElementById('prognoseDiagrammContainer').style.display = 'block';
     document.getElementById('prognoseStats').innerHTML =
         '<span style="color:var(--text-muted,#94a3b8);font-size:0.9em">Lade Daten…</span>';
-    document.getElementById('prognoseDiagrammAnzeigenBtn').style.display    = 'none';
-    document.getElementById('prognoseDiagrammAktualisierenBtn').style.display = 'inline-block';
-    document.getElementById('prognoseDiagrammSchließenBtn').style.display    = 'inline-block';
-    document.getElementById('prognoseDiagrammAusklappenBtn').style.display   = 'none';
 
     // Daten laden
     const { data: allData, error } = await supabaseClient
@@ -17579,8 +18264,7 @@ async function zeigePrognoseDiagramm() {
         .not("leistung", "is", null);
 
     if (error || !allData || allData.length === 0) {
-        alert("Keine Daten für " + disziplin + " gefunden.");
-        document.getElementById('prognoseDiagrammContainer').style.display = 'none';
+        zeigePrognoseEmptyState('Keine Daten für ' + disziplin + ' gefunden.');
         return;
     }
 
@@ -17598,8 +18282,7 @@ async function zeigePrognoseDiagramm() {
         .sort((a, b) => a.datum - b.datum);
 
     if (alleLeistungen.length < 2) {
-        alert("Mindestens 2 gültige Leistungen erforderlich für eine Prognose.");
-        document.getElementById('prognoseDiagrammContainer').style.display = 'none';
+        zeigePrognoseEmptyState('Mindestens 2 gültige Leistungen erforderlich für eine Prognose.');
         return;
     }
 
@@ -17924,19 +18607,22 @@ function getEinheit(disziplin) {
     }
 }
 
-function schließePrognoseDiagramm() {
+function zeigePrognoseEmptyState(text) {
+    const es = document.getElementById('prognoseEmptyState');
+    if (es) {
+        es.textContent = text || 'Disziplin wählen, um die Prognose anzuzeigen.';
+        es.style.display = 'block';
+    }
     document.getElementById('prognoseDiagrammContainer').style.display = 'none';
-    document.getElementById('prognoseDiagrammAnzeigenBtn').style.display = 'none';
-    document.getElementById('prognoseDiagrammAktualisierenBtn').style.display = 'none';
-    document.getElementById('prognoseDiagrammSchließenBtn').style.display = 'none';
-    document.getElementById('prognoseDiagrammAusklappenBtn').style.display = 'inline-block';
 }
 
-function klappeAusPrognoseDiagramm() {
-    document.getElementById('prognoseDiagrammContainer').style.display = 'block';
-    document.getElementById('prognoseDiagrammAktualisierenBtn').style.display = 'inline-block';
-    document.getElementById('prognoseDiagrammSchließenBtn').style.display = 'inline-block';
-    document.getElementById('prognoseDiagrammAusklappenBtn').style.display = 'none';
+function onPrognoseChange() {
+    const disziplin = document.getElementById('prognoseDisziplin').value;
+    if (!disziplin) {
+        zeigePrognoseEmptyState();
+        return;
+    }
+    zeigePrognoseDiagramm();
 }
 
 /* ── Zeitraum-Clientfilter für Statistiken (PostgREST filtert eingebettete Spalten nicht) ── */
@@ -17971,6 +18657,65 @@ function _runStatistik(fn, ...args) {
   fn(...args);
 }
 
+/* ── Statistiken: Ansicht-Toggle & Jahres-Chips ── */
+let _stAktuelleAnsicht = 'top';
+let _stJahr = 'alle';
+
+function _stAnsichten() {
+  return {
+    top:         () => _runStatistik(zeigeLeistungsTabelle),
+    avgleistung: () => _runStatistik(berechneDurchschnitt, 'leistung'),
+    avgplatz:    () => _runStatistik(berechneDurchschnitt, 'platzierung'),
+    quote:       () => _runStatistik(berechneErfolgsquote),
+    saison:      () => _runStatistik(zeigeSaisonvergleich),
+    frequenz:    () => _runStatistik(zeigeWettkampffrequenz)
+  };
+}
+
+function switchStAnsicht(view) {
+  const ansichten = _stAnsichten();
+  if (!ansichten[view]) view = 'top';
+  _stAktuelleAnsicht = view;
+  document.querySelectorAll('#stAnsichtToggle .analyse-subtab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+  ansichten[view]();
+}
+
+function renderStJahresChips() {
+  const container = document.getElementById('stJahresChips');
+  if (!container) return;
+  const jahre = verfuegbareJahre || [];
+  container.innerHTML =
+    `<button type="button" class="bl-jahr-chip${_stJahr === 'alle' ? ' active' : ''}" onclick="setStJahr('alle')">Alle Jahre</button>` +
+    jahre.map(j => `<button type="button" class="bl-jahr-chip${String(j) === _stJahr ? ' active' : ''}" onclick="setStJahr('${j}')">${j}</button>`).join('');
+}
+
+function setStJahr(jahr) {
+  _stJahr = String(jahr);
+  renderStJahresChips();
+  if (window._aktiveStatistikFn) window._aktiveStatistikFn();
+  else switchStAnsicht(_stAktuelleAnsicht);
+}
+
+/** Effektiver Zeitraum: "custom" aus dem Filter, sonst Chip-Jahr */
+function _stZeitraumWert() {
+  const sel = document.getElementById('statistikFilterZeitraum');
+  if (sel && sel.value === 'custom') return 'custom';
+  return _stJahr !== 'alle' ? _stJahr : '';
+}
+
+/* PostgREST filtert eingebettete Spalten (wettkampf.*) nur mit !inner-Join
+   auf Zeilenebene — diese Helper entscheiden, ob ein !inner-Join nötig ist. */
+function _stWkFilterAktiv() {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  return !!(v('statistikFilterOrt') || v('statistikFilterWK') || v('statistikFilterTyp'));
+}
+function _blWkFilterAktiv() {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  return !!(v('bestleistungenFilterOrt') || v('bestleistungenFilterWK') ||
+            v('bestleistungenFilterTyp') || v('bestleistungenFilterZeitraum'));
+}
+
 function _triggerActiveStatistik() {
   if (!window._aktiveStatistikFn) return;
   clearTimeout(_statistikDebounceTimer);
@@ -17980,6 +18725,8 @@ function _triggerActiveStatistik() {
 }
 
 function statistikFilterZuruecksetzen() {
+    _stJahr = 'alle';
+    renderStJahresChips();
     document.getElementById('statistikFilterDisziplin').value = '';
     document.getElementById('statistikFilterZeitraum').value = '';
     document.getElementById('statistikFilterOrt').value = '';
@@ -18155,6 +18902,59 @@ function updateBlFilterUI() {
       `<button class="lt-chip-remove" title="Filter entfernen" onclick="removeBlChip('${safeId}')">×</button>`;
     container.appendChild(chip);
   });
+}
+
+/* ── Bestleistungen: PB/SB-Toggle, Timeline-Modus & Jahres-Chips (nur SBs) ── */
+let _blAktuelleAnsicht = null;
+let _blPbTimeline = false;
+let _blSbJahr = 'alle';
+
+function _syncBlAnsichtUI(modus) {
+  const isSb = modus === 'sb';
+  const pbBtn = document.getElementById('blViewBtn-pb');
+  const sbBtn = document.getElementById('blViewBtn-sb');
+  if (pbBtn) pbBtn.classList.toggle('active', !isSb);
+  if (sbBtn) sbBtn.classList.toggle('active', isSb);
+  const modusWrap = document.getElementById('blPbModusWrap');
+  if (modusWrap) modusWrap.style.display = isSb ? 'none' : 'flex';
+  const chips = document.getElementById('blJahresChips');
+  if (chips) chips.style.display = isSb ? 'flex' : 'none';
+  const check = document.getElementById('blTimelineCheck');
+  if (check) check.checked = modus === 'timeline';
+}
+
+function switchBlAnsicht(view) {
+  if (view === 'sb') {
+    _blAktuelleAnsicht = 'sb';
+    _syncBlAnsichtUI('sb');
+    renderBlJahresChips();
+    _ladeSBsDirektNachJahr(_blSbJahr);
+  } else {
+    if (_blPbTimeline) zeigePBTimeline();
+    else zeigePBs();
+  }
+}
+
+function toggleBlTimeline() {
+  const check = document.getElementById('blTimelineCheck');
+  _blPbTimeline = !!(check && check.checked);
+  if (_blPbTimeline) zeigePBTimeline();
+  else zeigePBs();
+}
+
+function renderBlJahresChips() {
+  const container = document.getElementById('blJahresChips');
+  if (!container) return;
+  const jahre = verfuegbareJahre || [];
+  container.innerHTML =
+    `<button type="button" class="bl-jahr-chip${_blSbJahr === 'alle' ? ' active' : ''}" onclick="setBlJahr('alle')">Alle Jahre</button>` +
+    jahre.map(j => `<button type="button" class="bl-jahr-chip${String(j) === _blSbJahr ? ' active' : ''}" onclick="setBlJahr('${j}')">${j}</button>`).join('');
+}
+
+function setBlJahr(jahr) {
+  _blSbJahr = String(jahr);
+  renderBlJahresChips();
+  _ladeSBsDirektNachJahr(_blSbJahr);
 }
 
 function removeBlChip(fieldId) {
@@ -18982,7 +19782,7 @@ function hideOrtLeistungen() {
     top: 0; left: 0;
     width: 100%; height: 100%;
     background: rgba(0,0,0,0.5);
-    z-index: 10002;
+    z-index: 99500; /* über dem Karten-Popup (9000) */
     justify-content: center;
     align-items: center;
     padding: 20px;
@@ -19896,16 +20696,8 @@ function resetAllFiltersAndSettings() {
     prognoseZeitraumRadios[0].checked = true;
   }
   
-  // PROGNOSE-BUTTONS ZURÜCKSETZEN
-  const prognoseDiagrammAnzeigenBtn = document.getElementById('prognoseDiagrammAnzeigenBtn');
-  const prognoseDiagrammAktualisierenBtn = document.getElementById('prognoseDiagrammAktualisierenBtn');
-  const prognoseDiagrammSchließenBtn = document.getElementById('prognoseDiagrammSchließenBtn');
-  const prognoseDiagrammAusklappenBtn = document.getElementById('prognoseDiagrammAusklappenBtn');
-  
-  if (prognoseDiagrammAnzeigenBtn) prognoseDiagrammAnzeigenBtn.style.display = 'inline-block';
-  if (prognoseDiagrammAktualisierenBtn) prognoseDiagrammAktualisierenBtn.style.display = 'none';
-  if (prognoseDiagrammSchließenBtn) prognoseDiagrammSchließenBtn.style.display = 'none';
-  if (prognoseDiagrammAusklappenBtn) prognoseDiagrammAusklappenBtn.style.display = 'none';
+  // PROGNOSE-ANZEIGE ZURÜCKSETZEN
+  if (typeof zeigePrognoseEmptyState === 'function') zeigePrognoseEmptyState();
   
   console.log('Alle Filter und Einstellungen wurden zurückgesetzt');
 }
@@ -20431,12 +21223,12 @@ async function berechneErfolgsquote() {
   const ak = document.getElementById("statistikFilterAK").value;
   const filterTyp = document.getElementById("statistikFilterTyp").value;
   const ms = document.getElementById("statistikFilterMS").value;
-  const filterZeitraum = document.getElementById("statistikFilterZeitraum").value;
+  const filterZeitraum = _stZeitraumWert();
   
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select(`*, wettkampf_id, ${_stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
     .eq("athlet_id", selectedAthleteId)
     .not("platzierung", "is", null);
   
@@ -20474,7 +21266,6 @@ async function berechneErfolgsquote() {
   const html = `
     <div class="results-info">
       <div class="results-count">Erfolgsquote</div>
-      <button class="results-close-btn" onclick="document.getElementById('analyseAusgabe').innerHTML='';enableTableResize();">×</button>
     </div>
     <div style="background: #f2f6fa; padding: 20px; border-radius: var(--border-radius); box-shadow: 0 2px 10px rgba(0,0,0,0.08);">
       <div>
@@ -20515,11 +21306,11 @@ async function zeigeSaisonvergleich() {
   const ak = document.getElementById("statistikFilterAK").value;
   const filterTyp = document.getElementById("statistikFilterTyp").value;
   const ms = document.getElementById("statistikFilterMS").value;
-  
+
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select(`*, wettkampf_id, ${_stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
     .eq("athlet_id", selectedAthleteId)
     .not("leistung", "is", null);
   
@@ -20579,7 +21370,6 @@ async function zeigeSaisonvergleich() {
   let html = `
     <div class="results-info">
       <div class="results-count"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Saisonvergleich</div>
-      <button class="results-close-btn" onclick="document.getElementById('analyseAusgabe').innerHTML='';enableTableResize();">×</button>
     </div>
     <div class="table-wrapper">
       <table>
@@ -20630,12 +21420,12 @@ async function zeigeWettkampffrequenz() {
   const ak = document.getElementById("statistikFilterAK").value;
   const filterTyp = document.getElementById("statistikFilterTyp").value;
   const ms = document.getElementById("statistikFilterMS").value;
-  const filterZeitraum = document.getElementById("statistikFilterZeitraum").value;
+  const filterZeitraum = _stZeitraumWert();
   
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select("*, wettkampf_id, wettkampf!inner(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
     .eq("athlet_id", selectedAthleteId)
     .not("wettkampf.startdatum", "is", null)
 if (disziplin) query = query.ilike("disziplin", `%${disziplin}%`);
@@ -20699,7 +21489,6 @@ if (disziplin) query = query.ilike("disziplin", `%${disziplin}%`);
   let html = `
     <div class="results-info">
       <div class="results-count"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Wettkampffrequenz</div>
-      <button class="results-close-btn" onclick="document.getElementById('analyseAusgabe').innerHTML='';enableTableResize();">×</button>
     </div>
     <div style="background: #f2f6fa; padding: 20px; border-radius: var(--border-radius); box-shadow: 0 2px 10px rgba(0,0,0,0.08);">
       <div>
@@ -20748,6 +21537,9 @@ if (disziplin) query = query.ilike("disziplin", `%${disziplin}%`);
 
 // PB-Timeline
 async function zeigePBTimeline() {
+  _blAktuelleAnsicht = 'timeline';
+  _blPbTimeline = true;
+  _syncBlAnsichtUI('timeline');
   if (!selectedAthleteId) {
     alert('Bitte wählen Sie zuerst einen Athleten aus!');
     return;
@@ -20761,11 +21553,11 @@ async function zeigePBTimeline() {
   const filterTyp = document.getElementById("bestleistungenFilterTyp").value;
   const ms = document.getElementById("bestleistungenFilterMS").value;
   const filterZeitraum = document.getElementById("bestleistungenFilterZeitraum").value;
-  
+
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select(`*, wettkampf_id, ${_blWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
     .eq("athlet_id", selectedAthleteId)
     .not("leistung", "is", null);
   
@@ -20842,7 +21634,6 @@ async function zeigePBTimeline() {
   let html = `
     <div class="results-info">
       <div class="results-count"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg> ${allePBs.length} Disziplinen mit Bestleistungen</div>
-      <button class="results-close-btn" onclick="document.getElementById('bestleistungenAusgabe').innerHTML='';enableTableResize();">×</button>
     </div>
     <div style="background: #f2f6fa; padding: 20px; border-radius: var(--border-radius); box-shadow: 0 2px 10px rgba(0,0,0,0.08);">
       <div style="position: relative; padding-left: 30px;">
@@ -21330,6 +22121,12 @@ window.setTimeout = function(fn, delay) {
 
 // Analyse Subtabs
 function switchAnalyseSection(section) {
+  // Legacy: 'sb' ist jetzt eine Ansicht innerhalb von 'entwicklungen'
+  if (section === 'sb') {
+    switchAnalyseSection('entwicklungen');
+    switchEntwicklungenView('sb');
+    return;
+  }
   document.querySelectorAll('.analyse-nav-item').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.analyse-section').forEach(sec => sec.style.display = 'none');
   const activeBtn = document.querySelector(`.analyse-nav-item[data-section="${section}"]`);
@@ -21338,20 +22135,43 @@ function switchAnalyseSection(section) {
   if (activeSection) activeSection.style.display = 'block';
   // Diagramm automatisch laden
   if (section === 'entwicklungen') {
-    // Wenn keine Disziplin gewählt, erste verfügbare automatisch auswählen
-    const entSel = document.getElementById('analyseDisziplin');
-    if (entSel && !entSel.value && entSel.options.length > 1) {
-      entSel.value = entSel.options[1].value; // Index 0 = Platzhalter "– alle –"
-    }
-    zeigeDiagramm();
+    renderEntwicklungenView();
   }
-  if (section === 'sb') {
-    // Wenn keine Disziplin gewählt, erste verfügbare automatisch auswählen
-    const sbSel = document.getElementById('sbDisziplin');
-    if (sbSel && !sbSel.value && sbSel.options.length > 1) {
-      sbSel.value = sbSel.options[1].value; // Index 0 = Platzhalter "– Disziplin wählen –"
-    }
+  if (section === 'bestleistungen') {
+    switchBlAnsicht(_blAktuelleAnsicht === 'sb' ? 'sb' : 'pb');
+  }
+  if (section === 'statistiken') {
+    renderStJahresChips();
+    switchStAnsicht(_stAktuelleAnsicht);
+  }
+}
+
+/* ── Entwicklungen: Ansicht-Umschalter (Einzelleistungen / SB & Ø) ── */
+let _entwicklungenView = 'einzel';
+
+/** Wählt die erste echte Disziplin (überspringt Platzhalter & Trennlinien) */
+function _waehleErsteDisziplin(select) {
+  if (!select || select.value) return;
+  const erste = Array.from(select.options).find(o => o.value && !o.disabled);
+  if (erste) select.value = erste.value;
+}
+
+function switchEntwicklungenView(view) {
+  _entwicklungenView = view;
+  document.getElementById('entwicklungenView-einzel').style.display = view === 'einzel' ? 'block' : 'none';
+  document.getElementById('entwicklungenView-sb').style.display = view === 'sb' ? 'block' : 'none';
+  document.getElementById('entwicklungenViewBtn-einzel').classList.toggle('active', view === 'einzel');
+  document.getElementById('entwicklungenViewBtn-sb').classList.toggle('active', view === 'sb');
+  renderEntwicklungenView();
+}
+
+function renderEntwicklungenView() {
+  if (_entwicklungenView === 'sb') {
+    _waehleErsteDisziplin(document.getElementById('sbDisziplin'));
     zeigeSBDiagramm();
+  } else {
+    _waehleErsteDisziplin(document.getElementById('analyseDisziplin'));
+    zeigeDiagramm();
   }
 }
 
@@ -21627,7 +22447,7 @@ function performSearch(searchTerm) {
   // Hilfsfunktion: Checkbox für Header-Text finden
   const spaltenCbs = document.querySelectorAll('#leistungenTab .spalte');
   function cbFuerHeader(th) {
-    const t = th.textContent.trim().replace(/[▲▼]/g, '').trim().toLowerCase();
+    const t = th.textContent.trim().replace(/[▲▼⇅]/g, '').trim().toLowerCase();
     return Array.from(spaltenCbs).find(cb => {
       const d = (SPALTEN_ANZEIGE[cb.value] || cb.value).toLowerCase();
       return d === t || cb.value.toLowerCase() === t;
@@ -22282,14 +23102,83 @@ function vergleicheLeistungen(leistung1, leistung2, disziplin) {
           </div>
         </div>
 
-        <!-- Karte rechts -->
-        <div class="detail-map-wrapper">
-          <h3><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Wettkampfort</h3>
-          <div id="detailMap" class="detail-map-container"></div>
+      </div>
+
+      <!-- Medien (Fotos & Videos) -->
+      <div class="detail-medien-wrapper">
+        <h3><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Medien</h3>
+        <div id="detailMedienGrid" class="detail-medien-grid"></div>
+        <div id="detailMedienControls" class="detail-medien-controls" style="display:none;">
+          <label class="medien-btn medien-btn--primary">
+            <input type="file" id="medienUploadInput" accept="image/*,video/*" multiple onchange="handleMedienUpload(this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Foto/Video hochladen
+          </label>
+          <button type="button" class="medien-btn" onclick="addMedienLink()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            Video-Link
+          </button>
+          <span id="medienUploadStatus" class="medien-status"></span>
+          <div id="medienProgressWrap" class="medien-progress" style="display:none;"><div id="medienProgressFill"></div></div>
         </div>
       </div>
     </div>
   </div>
+</div>
+
+<!-- Wettkampforte-Karte als Popup (Klick auf Mini-Karte) -->
+<div id="dashMapPopup" class="dash-map-popup" onclick="if(event.target===this) closeDashMapPopup()">
+  <div class="dash-map-popup-content">
+    <div class="dash-map-popup-header">
+      <h2><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Wettkampforte</h2>
+      <button class="detail-popup-close" onclick="closeDashMapPopup()" aria-label="Karte schließen">×</button>
+    </div>
+    <div class="dashboard-map-container">
+              <div id="mapContainer" style="position: relative; height: 520px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid #e0e0e0;">
+                <!-- Zoom-Reset-Button unten links -->
+                <button id="mapResetZoomBtn" onclick="resetMapZoom()" title="Zoom zurücksetzen" style="position:absolute;bottom:12px;left:12px;z-index:1000;background:white;border:1.5px solid #c7d4f5;border-radius:9px;cursor:pointer;padding:8px 16px;color:#1e3a8a;font-size:0.88em;font-weight:700;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(30,58,138,0.15);" onmouseover="this.style.background='#eef4ff'" onmouseout="this.style.background='white'">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  Übersicht
+                </button>
+                <!-- Vollbild-Button -->
+                <button id="mapFullscreenBtn" onclick="toggleMapFullscreen()" title="Vollbild" style="position:absolute;top:10px;right:10px;z-index:1000;background:white;border:1.5px solid #e0e0e0;border-radius:7px;cursor:pointer;padding:6px 8px;color:#6b7280;display:flex;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,0.12);" onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background='white'">
+                  <svg id="mapFullscreenIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+                <!-- Leaflet Weltkarte -->
+                <div id="wettkampfLeafletMap" style="width: 100%; height: 100%;"></div>
+                <!-- Legende -->
+                <div id="mapLegend" class="map-legend">
+                  <div style="margin-bottom: 8px; font-weight: bold; color: #2a5298;">Leistungen:</div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
+                    <div style="width: 6px; height: 6px; background: #b3d9ff; border: 1.5px solid #66a3d2; border-radius: 50%;"></div>
+                    <span>1-2</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
+                    <div style="width: 8px; height: 8px; background: #80bfff; border: 1.5px solid #4d94d9; border-radius: 50%;"></div>
+                    <span>3-5</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
+                    <div style="width: 10px; height: 10px; background: #4da6ff; border: 1.5px solid #3385d6; border-radius: 50%;"></div>
+                    <span>6-10</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
+                    <div style="width: 12px; height: 12px; background: #1a8cff; border: 1.5px solid #1a75d2; border-radius: 50%;"></div>
+                    <span>11-20</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 14px; height: 14px; background: #0066cc; border: 1.5px solid #004d99; border-radius: 50%;"></div>
+                    <span>20+</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+  </div>
+</div>
+
+<!-- Medien-Lightbox -->
+<div id="medienLightbox" class="medien-lightbox" onclick="closeMedienLightbox(event)">
+  <button type="button" class="medien-lightbox-close" onclick="closeMedienLightbox()" aria-label="Schließen">×</button>
+  <div id="medienLightboxContent"></div>
 </div>
 
 <!-- ── Share-Modal: Leistung teilen ────────────────────────────────────
@@ -22743,11 +23632,8 @@ function renderDashMiniMap(bounds) {
     });
     L.tileLayer(cfg.url, { maxZoom: 19 }).addTo(_dashMiniLeafletMap);
     _dashMiniMarkerLayer = L.layerGroup().addTo(_dashMiniLeafletMap);
-    // Click → Karte-Tab öffnen
-    _dashMiniLeafletMap.on('click', () => {
-      switchTab('dashboard');
-      setTimeout(() => switchDashTab('karte'), 80);
-    });
+    // Click → Karten-Popup öffnen
+    _dashMiniLeafletMap.on('click', () => openDashMapPopup());
   } else {
     _dashMiniMarkerLayer.clearLayers();
   }
@@ -23948,6 +24834,13 @@ async function ladeWettkaempfe() {
 
   wettkaempfeDaten = data || [];
 
+  // Wettkämpfe mit Medien (Kamera-Indikator in der Liste)
+  try {
+    const { data: wkMedien } = await supabaseClient.schema('la').from('leistung_medien')
+      .select('leistung!inner(wettkampf_id)').eq('athlet_id', aid);
+    _medienWettkampfIds = new Set((wkMedien || []).map(m => m.leistung?.wettkampf_id).filter(Boolean));
+  } catch (e) { console.error('Wettkampf-Medien-IDs laden fehlgeschlagen:', e); }
+
   // Disziplinen pro Wettkampf laden (Single-Query, dann zuordnen)
   if (wettkaempfeDaten.length > 0) {
     const { data: diszData } = await supabaseClient
@@ -24215,7 +25108,7 @@ function renderWettkaempfeListe() {
     return `<div class="wk-list-item" style="border-left:4px solid ${accentColor};"
               onclick="zeigeWettkampfDetail(${wk.id})">
       <div style="min-width:0;">
-        <div class="wk-item-title" style="font-weight:700;color:#1e3c72;font-size:0.97em;">${escapeHtml(wk.bezeichnung || 'Wettkampf')}</div>
+        <div class="wk-item-title" style="font-weight:700;color:#1e3c72;font-size:0.97em;">${escapeHtml(wk.bezeichnung || 'Wettkampf')}${_medienWettkampfIds.has(wk.id) ? ' <svg style="margin-left:4px;vertical-align:-2px;" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1e3a8a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' : ''}</div>
         <div class="wk-item-meta" style="font-size:0.82em;color:#64748b;margin-top:3px;">${meta}</div>
       </div>
       ${diszHtml ? `<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">${diszHtml}</div>` : ''}
@@ -24265,11 +25158,6 @@ function exportiereWettkaempfeCSV() {
 // Zur Detailansicht eines Wettkampfs wechseln
 function zeigeWettkampfDetail(wkId) {
   currentWettkampf = wettkaempfeDaten.find(wk => Number(wk.id) === Number(wkId)) || null;
-  // Back-Button-Text je nach Herkunft anpassen
-  const _backBtn = document.getElementById('wkBackBtn');
-  if (_backBtn) {
-    _backBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Zurück';
-  }
   // History-Eintrag für Browser-Zurück-Button
   if (!window._skipHistoryPush) {
     history.pushState({ tab: 'wettkaempfe', view: 'detail', wkId: wkId }, '', '');
@@ -24300,14 +25188,14 @@ function zeigeWettkampfDetail(wkId) {
 
 // Zurück-Navigation: geht zum vorherigen Tab zurück
 function wkZurueck() {
-  const prevTab = window._previousAppTab;
-  window._fromKalender = false;
-  if (prevTab && prevTab !== 'wettkaempfe') {
+  // Kalender-Herkunft: zurück zum Kalender, sonst immer zur Wettkampfliste
+  if (window._fromKalender) {
+    window._fromKalender = false;
     zeigeWettkampfListe();
-    switchTab(prevTab);
-  } else {
-    zeigeWettkampfListe();
+    switchTab('kalender');
+    return;
   }
+  zeigeWettkampfListe();
 }
 
 // Browser-Zurück-Button: Navigation innerhalb der App
@@ -24471,6 +25359,37 @@ async function renderWettkampfDetail() {
   });
   // Leistungen für Share-Funktion zwischenspeichern
   window._wkShareLeistungen = data;
+
+  // Medien-Galerie des Wettkampfs laden
+  ladeWettkampfMedien(wk.id);
+}
+
+/* ── Wettkampf-Detail: Medien-Galerie ── */
+async function ladeWettkampfMedien(wettkampfId) {
+  const el = document.getElementById('wkDetailMedien');
+  if (!el) return;
+  el.style.display = 'none';
+  el.innerHTML = '';
+  if (!wettkampfId) return;
+
+  const { data, error } = await supabaseClient.schema('la').from('leistung_medien')
+    .select('*, leistung!inner(id, disziplin, wettkampf_id)')
+    .eq('leistung.wettkampf_id', wettkampfId);
+  if (error) { console.error('Wettkampf-Medien laden fehlgeschlagen:', error); return; }
+  if (!data || !data.length) return;
+
+  const pfade = data.filter(m => m.pfad).map(m => m.pfad);
+  const urlMap = {};
+  if (pfade.length) {
+    const { data: signed } = await supabaseClient.storage
+      .from(MEDIEN_BUCKET).createSignedUrls(pfade, 3600);
+    if (signed) signed.forEach(s => { if (s.signedUrl) urlMap[s.path] = s.signedUrl; });
+  }
+  el.innerHTML = `<div style="font-weight:600;color:#1e3a8a;margin-bottom:10px;font-size:0.9em;">Medien (${data.length})</div>
+    <div class="detail-medien-grid" id="wkMedienGrid"></div>`;
+  const grid = el.querySelector('#wkMedienGrid');
+  data.forEach(m => grid.appendChild(_baueMedienThumb(m, urlMap[m.pfad], false)));
+  el.style.display = 'block';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -26200,6 +27119,66 @@ th:hover .sort-indicator {
 }
 .ort-popup-sort-th:hover .sort-arrow {
   opacity: 0.8;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EINHEITLICHE SCHLIESSEN-BUTTONS (Stil des Orte-Popups)
+   Gilt ausnahmslos für alle Popup-Schließen-Buttons der App.
+   ══════════════════════════════════════════════════════════════ */
+.modal-close-btn,
+.detail-popup-close,
+.medien-lightbox-close,
+.ort-popup-close-btn {
+  background: #ffffff !important;
+  border: 2px solid navy !important;
+  color: navy !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 1.5em !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  transform: none !important;
+  transition: background 0.2s, transform 0.15s !important;
+  flex-shrink: 0;
+}
+.modal-close-btn:hover,
+.detail-popup-close:hover,
+.medien-lightbox-close:hover,
+.ort-popup-close-btn:hover {
+  background: #e8eef8 !important;
+  color: navy !important;
+  border-color: navy !important;
+  transform: translateY(-1px) !important;
+}
+body.dark-mode .modal-close-btn,
+body.dark-mode .detail-popup-close,
+body.dark-mode .medien-lightbox-close,
+body.dark-mode .ort-popup-close-btn {
+  background: #1e293b !important;
+  border-color: #475569 !important;
+  color: #94a3b8 !important;
+}
+body.dark-mode .modal-close-btn:hover,
+body.dark-mode .detail-popup-close:hover,
+body.dark-mode .medien-lightbox-close:hover,
+body.dark-mode .ort-popup-close-btn:hover {
+  background: #0f172a !important;
+}
+/* Auf Navy-Headern verschwindet ein navyfarbener Rand optisch — dort den
+   gleichen halbtransparenten weißen Rand wie die Nachbar-Buttons verwenden */
+.detail-popup-actions .detail-popup-close,
+.dash-map-popup-header .detail-popup-close {
+  border-color: rgba(255,255,255,0.5) !important;
+}
+.detail-popup-actions .detail-popup-close:hover,
+.dash-map-popup-header .detail-popup-close:hover {
+  border-color: #c7d8f0 !important;
 }
 </style>
 
