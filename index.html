@@ -1,6 +1,6 @@
-<!-- Letzte Änderung: 2026-06-10 13:50 -->
+<!-- Letzte Änderung: 2026-06-11 12:24 -->
 <!DOCTYPE html>
-<!-- Letzte Änderung: 2026-06-10 13:50 -->
+<!-- Letzte Änderung: 2026-06-11 12:24 -->
 <html lang="de">
 <head>
 	<!-- Google tag (gtag.js) -->
@@ -57,6 +57,24 @@ let popupDragStartX, popupDragStartY, popupDragPosX, popupDragPosY;
 // Aktuell geöffnete Leistung — wird vom Share-Modal gelesen.
 // Single Source of Truth: nur openDetailPopup setzt sie, closeDetailPopup leert sie.
 let currentDetailLeistung = null;
+
+/** PB-Vergleich für das Detail-Popup: ist diese Leistung die PB / Abstand zur PB */
+function _pbDeltaInfo(l) {
+  if (l.leistung == null || typeof alleLeistungenFuerPBs === 'undefined' || !Array.isArray(alleLeistungenFuerPBs)) return null;
+  const peers = alleLeistungenFuerPBs.filter(x => x.disziplin === l.disziplin && x.leistung != null);
+  if (!peers.length) return null;
+  const d = (l.disziplin || '').toLowerCase();
+  const istZeit = (d.match(/\d+\s*m/) && !d.includes('kampf')) || d.includes('lauf') || d.includes('x');
+  const pb = peers.reduce((b, x) => (istZeit ? x.leistung < b : x.leistung > b) ? x.leistung : b, peers[0].leistung);
+  const istPB = istZeit ? l.leistung <= pb : l.leistung >= pb;
+  if (istPB) return { istPB: true, text: null };
+  const einheit = l.einheit || (typeof getEinheit === 'function' ? getEinheit(l.disziplin) : '');
+  const diff = Math.abs(l.leistung - pb).toFixed(2).replace('.', ',');
+  const text = istZeit
+    ? `+${diff}\u00a0${einheit} zur PB (${formatiereLeistung(pb, l.disziplin, l.einheit)})`
+    : `${diff}\u00a0${einheit} unter PB (${formatiereLeistung(pb, l.disziplin, l.einheit)})`;
+  return { istPB: false, text };
+}
 
 function openDetailPopup(leistungData) {
   console.log('Opening detail popup for:', leistungData);
@@ -122,21 +140,26 @@ function openDetailPopup(leistungData) {
 
   // Build info grid
   infoGrid.innerHTML = '';
-  
-  // Oben links: Leistung (50% Breite - span 2)
-  const leistungDiv = document.createElement('div');
-  leistungDiv.className = 'detail-info-item';
-  leistungDiv.style.gridColumn = 'span 2';
-  leistungDiv.innerHTML = `
-    <div class="detail-info-label">Leistung</div>
-    <div class="detail-info-value detail-info-value-bold">${formatiereLeistung(leistungData.leistung, leistungData.disziplin, leistungData.einheit)}</div>
+
+  // ── Hero: Leistung groß, mit Disziplin-Icon und PB-Vergleich ──
+  const pbInfo = _pbDeltaInfo(leistungData);
+  const heroDiv = document.createElement('div');
+  heroDiv.className = 'detail-hero';
+  heroDiv.innerHTML = `
+    <span class="detail-hero-icon">${typeof getDisziplinIcon === 'function' ? getDisziplinIcon(leistungData.disziplin, null) : ''}</span>
+    <div style="min-width:0;">
+      <div class="detail-info-label">Leistung</div>
+      <div class="detail-hero-wert">${formatiereLeistung(leistungData.leistung, leistungData.disziplin, leistungData.einheit)}</div>
+      ${pbInfo && pbInfo.text ? `<div class="detail-hero-sub">${pbInfo.text}</div>` : ''}
+    </div>
+    ${pbInfo && pbInfo.istPB ? `<span class="detail-pb-badge">${_shareIcon('trophy', '#422006', 14)}Persönliche Bestleistung</span>` : ''}
   `;
-  infoGrid.appendChild(leistungDiv);
-  
-  // Oben rechts: Wettkampf (50% Breite - span 2) — klickbar wenn ID vorhanden
+  infoGrid.appendChild(heroDiv);
+
+  // ── Zeile 2: Wettkampf (½) + Platzierung + Altersklasse ──
   const wettkampfDiv = document.createElement('div');
   wettkampfDiv.className = 'detail-info-item';
-  wettkampfDiv.style.gridColumn = 'span 2';
+  wettkampfDiv.style.gridColumn = 'span 6';
   const wkId = leistungData.wettkampf?.id || leistungData.wettkampf_id;
   const wkName = leistungData.wettkampf?.bezeichnung || '-';
   if (wkId) {
@@ -154,50 +177,72 @@ function openDetailPopup(leistungData) {
     `;
   }
   infoGrid.appendChild(wettkampfDiv);
-  
-  // Unten: Platzierung (25%) - Zeile 2, Spalte 1
+
+  // Platzierung als Medaille (Gold/Silber/Bronze wie der Header)
   const platzierungDiv = document.createElement('div');
   platzierungDiv.className = 'detail-info-item';
-  platzierungDiv.style.gridColumn = '1';
-  platzierungDiv.style.gridRow = '2';
+  const _platz = leistungData.platzierung;
+  let _platzHtml = '<div class="detail-info-value">-</div>';
+  if (_platz != null && _platz !== '') {
+    const _medaille = _platz === 1 ? ' gold' : _platz === 2 ? ' silber' : _platz === 3 ? ' bronze' : '';
+    _platzHtml = `<span class="detail-platz-badge${_medaille}">${_platz}</span>`;
+  }
+  platzierungDiv.style.gridColumn = 'span 2';
   platzierungDiv.innerHTML = `
     <div class="detail-info-label">Platzierung</div>
-    <div class="detail-info-value">${leistungData.platzierung || '-'}</div>
+    ${_platzHtml}
   `;
   infoGrid.appendChild(platzierungDiv);
-  
-  // Unten: Altersklasse (25%) - Zeile 2, Spalte 2
+
   const akDiv = document.createElement('div');
   akDiv.className = 'detail-info-item';
-  akDiv.style.gridColumn = '2';
-  akDiv.style.gridRow = '2';
+  akDiv.style.gridColumn = 'span 2';
   akDiv.innerHTML = `
     <div class="detail-info-label">Altersklasse</div>
     <div class="detail-info-value">${leistungData.ak || '-'}</div>
   `;
   infoGrid.appendChild(akDiv);
-  
-  // Unten: Saison (25%) - Zeile 2, Spalte 3
+
+  const rundeDiv = document.createElement('div');
+  rundeDiv.className = 'detail-info-item';
+  rundeDiv.style.gridColumn = 'span 2';
+  const _runde = leistungData.runde;
+  rundeDiv.innerHTML = `
+    <div class="detail-info-label">Runde</div>
+    <div class="detail-info-value">${_runde ? ((typeof RUNDEN_ANZEIGE !== 'undefined' && RUNDEN_ANZEIGE[_runde]) || _runde) : '-'}</div>
+  `;
+  infoGrid.appendChild(rundeDiv);
+
+  // ── Zeile 4: Ort (½) + Saison (½) ──
+  const ortDiv = document.createElement('div');
+  ortDiv.className = 'detail-info-item';
+  ortDiv.style.gridColumn = 'span 3';
+  const _ortName = (leistungData.wettkampf?.ort_display || leistungData.wettkampf?.ort) || '';
+  if (_ortName) {
+    const _ortEsc = _ortName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    ortDiv.innerHTML = `
+      <div class="detail-info-label">Ort</div>
+      <div class="detail-info-value detail-wettkampf-link" onclick="openOrtPopupAusDetail('${_ortEsc}')" title="Alle Leistungen an diesem Ort anzeigen">
+        ${_ortName}
+        <svg style="vertical-align:-0.1em; margin-left:4px; opacity:0.6" viewBox="0 0 24 24" width="0.75em" height="0.75em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
+    `;
+  } else {
+    ortDiv.innerHTML = `
+      <div class="detail-info-label">Ort</div>
+      <div class="detail-info-value">-</div>
+    `;
+  }
+  infoGrid.appendChild(ortDiv);
+
   const typDiv = document.createElement('div');
   typDiv.className = 'detail-info-item';
-  typDiv.style.gridColumn = '3';
-  typDiv.style.gridRow = '2';
+  typDiv.style.gridColumn = 'span 3';
   typDiv.innerHTML = `
     <div class="detail-info-label">Saison</div>
     <div class="detail-info-value">${(s => s === 'h' ? 'Halle' : s === 'f' ? 'Freiluft' : s || '-')(leistungData.wettkampf?.saison ?? leistungData.typ)}</div>
   `;
   infoGrid.appendChild(typDiv);
-  
-  // Unten: Ort (25%) - Zeile 2, Spalte 4
-  const ortDiv = document.createElement('div');
-  ortDiv.className = 'detail-info-item';
-  ortDiv.style.gridColumn = '4';
-  ortDiv.style.gridRow = '2';
-  ortDiv.innerHTML = `
-    <div class="detail-info-label">Ort</div>
-    <div class="detail-info-value">${(leistungData.wettkampf?.ort_display || leistungData.wettkampf?.ort) || '-'}</div>
-  `;
-  infoGrid.appendChild(ortDiv);
   
   // Status-Badge (nur wenn nicht abgeschlossen oder kein Status = Fallback)
   if (leistungData.status && leistungData.status !== 'abgeschlossen') {
@@ -216,7 +261,7 @@ function openDetailPopup(leistungData) {
   if (leistungData.notizen && leistungData.notizen.trim()) {
     const notizenItem = document.createElement('div');
     notizenItem.className = 'detail-info-item';
-    notizenItem.style.cssText = 'grid-column:span 4;border-top:1px solid #f0f0f0;margin-top:4px;padding-top:10px;';
+    notizenItem.style.cssText = 'grid-column:1 / -1;border-top:1px solid #f0f0f0;margin-top:4px;padding-top:10px;';
     notizenItem.innerHTML = '<div class="detail-info-label">Notizen</div>' +
       '<div style="font-size:0.9em;line-height:1.55;color:#374151;white-space:pre-wrap;">' +
       (typeof escapeHtml === 'function' ? escapeHtml(leistungData.notizen.trim()) : leistungData.notizen.trim()) +
@@ -1024,65 +1069,98 @@ function _readShareConfig() {
 //   1) Hero  → Disziplin (uppercase Label) + Leistung (sehr groß) + Datum prominent
 //   2) Sekundär → Wettkampf, Platzierung, AK, Ort als ruhige Label-Wert-Zeilen
 //   3) Notizen → eigener Block mit blauem Akzent-Strich
+/* Wiederverwendbare SVG-Icons (ersetzen Emojis — rendern überall identisch) */
+const _SHARE_ICON_PATHS = {
+  trophy: '<path d="M7 4H4a1 1 0 0 0-1 1v3a5 5 0 0 0 5 5"/><path d="M17 4h3a1 1 0 0 1 1 1v3a5 5 0 0 1-5 5"/><path d="M7 4h10v8a5 5 0 0 1-10 0V4z"/><polyline points="8 21 16 21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  medal:  '<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>',
+  flag:   '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  pin:    '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  user:   '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  repeat: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  film:   '<rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/>'
+};
+function _shareIcon(name, color, size) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:-2px;">${_SHARE_ICON_PATHS[name]}</svg>`;
+}
+
+/* Platzierungsabhängiger Gradient — identisch zur Logik des Popup-Headers */
+function _shareGradientColors(platz) {
+  if (platz === 1) return ['#FFD700', '#1e3a8a'];
+  if (platz === 2) return ['#C8C8C8', '#1e3a8a'];
+  if (platz === 3) return ['#CD7F32', '#1e3a8a'];
+  return ['#1e3a8a', '#1e40af'];
+}
+
 function _buildShareInfoCard(cfg, l) {
   const card = document.createElement('div');
   card.style.cssText = [
     'position:fixed', 'left:-10000px', 'top:0',
-    'width:600px', 'padding:32px 36px',
-    'background:#ffffff', 'color:#1a1a1a',
+    'width:800px', 'padding:40px 44px 8px',
+    'background:transparent', 'color:#ffffff',
     'font-family:Inter, system-ui, -apple-system, sans-serif',
-    'border-radius:14px', 'box-sizing:border-box',
+    'box-sizing:border-box',
   ].join(';');
 
   const datumStr = (l.datum || l.wettkampf?.startdatum) ? formatiereDatum(l.datum || l.wettkampf?.startdatum) : null;
   const ort      = l.wettkampf?.ort_display || l.wettkampf?.ort;
+  const platz    = l.platzierung;
   let html = '';
 
-  // Branding (klein, dezent oben)
-  html += `<div style="font-size:11px; font-weight:700; letter-spacing:0.22em; text-transform:uppercase; color:#1e3a8a; margin-bottom:22px;">TrackUp</div>`;
+  // Kopfzeile: Branding links, Datum rechts
+  html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:30px;">
+    <span style="font-size:13px; font-weight:800; letter-spacing:0.26em; text-transform:uppercase; color:rgba(255,255,255,0.9);">TrackUp</span>
+    ${datumStr ? `<span style="font-size:15px; font-weight:600; color:rgba(255,255,255,0.75);">${escapeHtml(datumStr)}</span>` : ''}
+  </div>`;
 
-  // ─── HERO: Disziplin → Leistung → Datum (alle prominent) ───
   if (cfg.daten) {
+    // Disziplin
     if (l.disziplin) {
-      html += `<div style="font-size:16px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">${escapeHtml(l.disziplin)}</div>`;
+      html += `<div style="font-size:17px; font-weight:700; color:rgba(255,255,255,0.75); text-transform:uppercase; letter-spacing:0.14em; margin-bottom:6px;">${escapeHtml(l.disziplin)}</div>`;
     }
+    // Leistung + Platzierungs-Medaille in einer Zeile
+    html += `<div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; margin-bottom:8px;">`;
     if (l.leistung != null) {
-      html += `<div style="font-size:64px; font-weight:800; color:#1e3a8a; line-height:1; margin-bottom:14px; letter-spacing:-0.02em;">${escapeHtml(formatiereLeistung(l.leistung, l.disziplin))}</div>`;
+      html += `<span style="font-size:76px; font-weight:800; color:#ffffff; line-height:1; letter-spacing:-0.02em;">${escapeHtml(formatiereLeistung(l.leistung, l.disziplin, l.einheit))}</span>`;
     }
-    if (datumStr) {
-      html += `<div style="font-size:18px; font-weight:600; color:#1e293b; margin-bottom:22px; display:flex; align-items:center; gap:8px;">
-        <span style="display:inline-flex;align-items:center;vertical-align:middle;"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span><span>${escapeHtml(datumStr)}</span>
-      </div>`;
+    if (platz != null && platz !== '') {
+      const medailleFarbe = platz === 1 ? '#FFD700' : platz === 2 ? '#e5e7eb' : platz === 3 ? '#e0955f' : 'rgba(255,255,255,0.85)';
+      html += `<span style="display:inline-flex; align-items:center; gap:10px; background:rgba(255,255,255,0.16); border:1.5px solid rgba(255,255,255,0.35); border-radius:999px; padding:8px 20px; font-size:20px; font-weight:700; color:#ffffff;">${_shareIcon('medal', medailleFarbe, 22)}${escapeHtml(String(platz))}. Platz</span>`;
+    }
+    html += `</div>`;
+
+    // PB-Badge bzw. Abstand zur PB
+    const pbInfo = (typeof _pbDeltaInfo === 'function') ? _pbDeltaInfo(l) : null;
+    if (pbInfo && pbInfo.istPB) {
+      html += `<div style="margin:6px 0 0;"><span style="display:inline-flex; align-items:center; gap:9px; background:linear-gradient(135deg,#FFD700,#f59e0b); color:#422006; border-radius:999px; padding:7px 20px; font-size:16px; font-weight:800;">${_shareIcon('trophy', '#422006', 18)}Persönliche Bestleistung</span></div>`;
+    } else if (pbInfo && pbInfo.text) {
+      html += `<div style="font-size:15px; font-weight:600; color:rgba(255,255,255,0.75); margin-top:4px;">${escapeHtml(pbInfo.text)}</div>`;
     }
 
-    // ─── Sekundäre Daten als ruhige Tabelle ───
-    const rows = [];
-    if (l.wettkampf?.bezeichnung) rows.push(['Wettkampf',   l.wettkampf.bezeichnung]);
-    if (l.platzierung)            rows.push(['Platzierung', l.platzierung]);
-    if (l.ak)                     rows.push(['Altersklasse', l.ak]);
-    if (ort)                      rows.push(['Ort',         ort]);
-
-    if (rows.length) {
-      html += `<div style="border-top:1px solid #e2e8f0; padding-top:12px;">`;
-      for (const [label, value] of rows) {
-        html += `<div style="display:flex; justify-content:space-between; align-items:baseline; padding:7px 0; border-bottom:1px solid #f1f5f9;">
-          <span style="font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">${escapeHtml(label)}</span>
-          <span style="font-size:14px; color:#1e293b; font-weight:500; text-align:right;">${escapeHtml(String(value))}</span>
-        </div>`;
+    // Info-Chips: Wettkampf, Ort, AK, Runde
+    const chipIcon = name => _shareIcon(name, 'rgba(255,255,255,0.85)', 15);
+    const chips = [];
+    if (l.wettkampf?.bezeichnung) chips.push([chipIcon('flag'), l.wettkampf.bezeichnung]);
+    if (ort)                      chips.push([chipIcon('pin'), ort]);
+    if (l.ak)                     chips.push([chipIcon('user'), l.ak]);
+    if (l.runde)                  chips.push([chipIcon('repeat'), (typeof RUNDEN_ANZEIGE !== 'undefined' && RUNDEN_ANZEIGE[l.runde]) || l.runde]);
+    if (chips.length) {
+      html += `<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:26px;">`;
+      for (const [icon, value] of chips) {
+        html += `<span style="display:inline-flex; align-items:center; gap:8px; background:rgba(255,255,255,0.13); border-radius:999px; padding:8px 18px; font-size:15px; font-weight:600; color:rgba(255,255,255,0.95); max-width:100%;">${icon}&nbsp;${escapeHtml(String(value))}</span>`;
       }
       html += `</div>`;
     }
   }
 
-  // ─── Notizen (eigener Block) ───
+  // Notizen als helles Panel
   if (cfg.notizen && l.notizen && l.notizen.trim()) {
-    const marginTop = cfg.daten ? '20px' : '0';
-    html += `<div style="margin-top:${marginTop}; padding:14px 16px; background:#f1f5f9; border-left:4px solid #1e3a8a; border-radius:8px;">
-      <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">Notizen</div>
-      <div style="font-size:14px; line-height:1.55; white-space:pre-wrap; color:#1a1a1a;">${escapeHtml(l.notizen.trim())}</div>
+    html += `<div style="margin-top:${cfg.daten ? '26px' : '0'}; padding:18px 22px; background:rgba(255,255,255,0.96); border-radius:14px;">
+      <div style="font-size:11px; color:#64748b; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px;">Notizen</div>
+      <div style="font-size:15px; line-height:1.6; white-space:pre-wrap; color:#1e293b;">${escapeHtml(l.notizen.trim())}</div>
     </div>`;
   }
 
+  html += `<div style="height:24px;"></div>`;
   card.innerHTML = html;
   return card;
 }
@@ -1211,16 +1289,13 @@ function _resolveShareMapCoords(l) {
 async function _buildShareImage(cfg, l) {
   if (typeof html2canvas !== 'function') return null;
 
-  const opts = { backgroundColor: '#ffffff', useCORS: true, scale: 2, logging: false };
-  const canvases = [];
-
-  // 1) Allgemeine Daten + Notizen → off-screen Karte
+  // 1) Info-Karte (transparent, liegt direkt auf dem Gradient)
+  let infoCanvas = null;
   if (cfg.daten || cfg.notizen) {
     const card = _buildShareInfoCard(cfg, l);
     document.body.appendChild(card);
     try {
-      const c = await html2canvas(card, opts);
-      canvases.push(c);
+      infoCanvas = await html2canvas(card, { backgroundColor: null, useCORS: true, scale: 2, logging: false });
     } catch (e) {
       console.warn('html2canvas: Info-Karte fehlgeschlagen', e);
     } finally {
@@ -1228,45 +1303,78 @@ async function _buildShareImage(cfg, l) {
     }
   }
 
-  // 2) Diagramm (live aus Popup)
+  // 2) Diagramm (live aus dem Popup) + 3) statische Karte → weiße Panels
+  const panels = [];
   if (cfg.chart) {
     const el = document.querySelector('.detail-chart-wrapper');
     if (el) {
-      try { canvases.push(await html2canvas(el, opts)); }
+      try { panels.push(await html2canvas(el, { backgroundColor: '#ffffff', useCORS: true, scale: 2, logging: false })); }
       catch (e) { console.warn('html2canvas: Diagramm fehlgeschlagen', e); }
     }
   }
-
-  // 3) Karte: eigener statischer Renderer (html2canvas auf Leaflet
-  //    liefert wegen CSS-Transformen falsche Ausschnitte)
   if (cfg.map) {
-    const c = _resolveShareMapCoords(l);
-    if (c) {
-      try { canvases.push(await _buildStaticMapCanvas(c.lat, c.lon, c.label)); }
+    const co = _resolveShareMapCoords(l);
+    if (co) {
+      try { panels.push(await _buildStaticMapCanvas(co.lat, co.lon, co.label)); }
       catch (e) { console.warn('Statische Karte fehlgeschlagen', e); }
     }
   }
 
-  if (!canvases.length) return null;
+  if (!infoCanvas && !panels.length) return null;
 
-  // Composite: vertikal stapeln, einheitliche Breite + Padding
-  const GAP = 16;
-  const PAD = 24;
-  const width  = Math.max(...canvases.map(c => c.width)) + PAD * 2;
-  const height = canvases.reduce((s, c) => s + c.height, 0) + GAP * (canvases.length - 1) + PAD * 2;
+  // Composite: ein Gradient-Hintergrund (platzierungsabhängig wie der Popup-Header),
+  // Info-Karte full-bleed, Diagramm/Karte als abgerundete weiße Panels
+  const S = 2;                      // Render-Scale für Schärfe
+  const CARD_W = 800 * S;
+  const PAD = 30 * S, GAP = 20 * S, RADIUS = 18 * S;
+  const INNER = CARD_W - PAD * 2;
+  const FOOTER = 46 * S;
+
+  const infoH = infoCanvas ? Math.round(infoCanvas.height * (CARD_W / infoCanvas.width)) : PAD;
+  const panelHs = panels.map(p => Math.round(p.height * (INNER / p.width)));
+  const height = infoH + panelHs.reduce((s, h) => s + h + GAP, 0) + FOOTER;
 
   const composite = document.createElement('canvas');
-  composite.width  = width;
+  composite.width = CARD_W;
   composite.height = height;
   const ctx = composite.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, width, height);
 
-  let y = PAD;
-  for (const c of canvases) {
-    ctx.drawImage(c, Math.floor((width - c.width) / 2), y);
-    y += c.height + GAP;
+  // Gradient-Hintergrund
+  const [g1, g2] = _shareGradientColors(l.platzierung);
+  const grad = ctx.createLinearGradient(0, 0, CARD_W, height * 0.7);
+  grad.addColorStop(0, g1);
+  grad.addColorStop(1, g2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CARD_W, height);
+
+  // Info-Karte
+  let y = 0;
+  if (infoCanvas) {
+    ctx.drawImage(infoCanvas, 0, 0, CARD_W, infoH);
+    y = infoH;
+  } else {
+    y = PAD;
   }
+
+  // Panels mit abgerundeten Ecken
+  panels.forEach((p, i) => {
+    const h = panelHs[i];
+    ctx.save();
+    _roundRect(ctx, PAD, y, INNER, h, RADIUS);
+    ctx.clip();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(PAD, y, INNER, h);
+    ctx.drawImage(p, PAD, y, INNER, h);
+    ctx.restore();
+    y += h + GAP;
+  });
+
+  // Footer
+  ctx.font = `600 ${13 * S}px Inter, system-ui, sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Erstellt mit TrackUp', CARD_W / 2, height - FOOTER / 2);
 
   // Canvas → File
   return await new Promise(resolve => {
@@ -1490,7 +1598,7 @@ async function ladeLeistungMedien(leistungData) {
   data.forEach(m => grid.appendChild(_baueMedienThumb(m, urlMap[m.pfad], darf)));
 }
 
-function _baueMedienThumb(m, url, darfLoeschen) {
+function _baueMedienThumb(m, url, darfLoeschen, infoText) {
   const div = document.createElement('div');
   div.className = 'medien-thumb';
   let inhalt = '', badge = '';
@@ -1503,12 +1611,15 @@ function _baueMedienThumb(m, url, darfLoeschen) {
     const yt = _youtubeId(m.url);
     inhalt = yt
       ? `<img src="https://img.youtube.com/vi/${yt}/hqdefault.jpg" alt="" loading="lazy" onerror="this.onerror=null;this.src='https://img.youtube.com/vi/${yt}/mqdefault.jpg'">`
-      : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.5em;">🎬</div>';
+      : `<div style="display:flex;align-items:center;justify-content:center;height:100%;">${_shareIcon('film', '#94a3b8', 26)}</div>`;
     badge = '<span class="medien-thumb-typ">Link</span>';
   } else {
     inhalt = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.3em;">⚠️</div>';
   }
+  // Typ-Badge oben rechts — neben dem Löschen-Button nach links ausweichen
+  if (darfLoeschen && badge) badge = badge.replace('class="medien-thumb-typ"', 'class="medien-thumb-typ" style="right:32px;"');
   div.innerHTML = inhalt + badge +
+    (infoText ? `<div class="dash-medien-tile-info" style="cursor:inherit;text-decoration:none;">${infoText}</div>` : '') +
     (darfLoeschen ? '<button type="button" class="medien-thumb-del" title="Löschen">×</button>' : '');
   div.addEventListener('click', e => {
     if (e.target.classList.contains('medien-thumb-del')) { loescheMedium(m); return; }
@@ -1789,7 +1900,7 @@ function closeMedienLightbox(event) {
 async function openLeistungById(leistungId) {
   if (!leistungId) return;
   const { data, error } = await supabaseClient.schema('la').from('leistung')
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)")
     .eq('id', leistungId).single();
   if (error || !data) {
     console.error('Leistung laden fehlgeschlagen:', error);
@@ -1797,6 +1908,140 @@ async function openLeistungById(leistungId) {
     return;
   }
   openDetailPopup(data);
+}
+
+/* ── Dashboard: Medien-Galerie (Modal mit allen Medien) ── */
+let _medienGalerieDaten = [];
+let _medienGalerieAnzeige = [];
+
+async function openMedienGalerie() {
+  const modal = document.getElementById('medienGalerieModal');
+  if (!modal || !selectedAthleteId) return;
+  const grid = document.getElementById('medienGalerieGrid');
+  const empty = document.getElementById('medienGalerieEmpty');
+  empty.style.display = 'none';
+  grid.innerHTML = '<div class="medien-galerie-empty" style="grid-column:1/-1;">Wird geladen …</div>';
+  modal.classList.add('open');
+
+  const { data, error } = await supabaseClient.schema('la').from('leistung_medien')
+    .select('*, leistung!inner(id, datum, disziplin, wettkampf(bezeichnung, ort, ort_display, startdatum))')
+    .eq('athlet_id', selectedAthleteId);
+  if (error || !data) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    empty.textContent = 'Medien konnten nicht geladen werden.';
+    if (error) console.error('Medien-Galerie laden fehlgeschlagen:', error);
+    return;
+  }
+
+  // Signed URLs für Storage-Dateien
+  const pfade = data.filter(m => m.pfad).map(m => m.pfad);
+  const urlMap = {};
+  if (pfade.length) {
+    const { data: signed, error: sErr } = await supabaseClient.storage
+      .from(MEDIEN_BUCKET).createSignedUrls(pfade, 3600);
+    if (!sErr && signed) signed.forEach(s => { if (s.signedUrl) urlMap[s.path] = s.signedUrl; });
+  }
+
+  _medienGalerieDaten = data.map(m => ({
+    typ: m.typ,
+    url: m.typ === 'link' ? null : urlMap[m.pfad],
+    linkUrl: m.url,
+    leistungId: m.leistung_id,
+    disziplin: m.leistung?.disziplin || '',
+    datum: m.leistung?.datum || m.leistung?.wettkampf?.startdatum || '',
+    wettkampf: m.leistung?.wettkampf?.bezeichnung || '',
+    ort: m.leistung?.wettkampf?.ort_display || m.leistung?.wettkampf?.ort || ''
+  })).filter(m => m.url || (m.typ === 'link' && m.linkUrl));
+
+  // Disziplin-Filter befüllen
+  const sel = document.getElementById('medienGalerieFilterDisziplin');
+  const aktuell = sel.value;
+  const disz = [...new Set(_medienGalerieDaten.map(m => m.disziplin).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'de'));
+  sel.innerHTML = '<option value="">Alle Disziplinen</option>' +
+    disz.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+  if (disz.includes(aktuell)) sel.value = aktuell;
+
+  renderMedienGalerie();
+}
+
+function renderMedienGalerie() {
+  const grid = document.getElementById('medienGalerieGrid');
+  const empty = document.getElementById('medienGalerieEmpty');
+  const countEl = document.getElementById('medienGalerieCount');
+  if (!grid) return;
+  const sort = document.getElementById('medienGalerieSort').value;
+  const fDisz = document.getElementById('medienGalerieFilterDisziplin').value;
+  const fTyp = document.getElementById('medienGalerieFilterTyp').value;
+
+  const liste = _medienGalerieDaten.filter(m =>
+    (!fDisz || m.disziplin === fDisz) && (!fTyp || m.typ === fTyp));
+
+  liste.sort((a, b) => {
+    if (sort === 'disziplin') {
+      return (a.disziplin || '').localeCompare(b.disziplin || '', 'de')
+        || String(b.datum).localeCompare(String(a.datum));
+    }
+    const cmp = String(a.datum || '').localeCompare(String(b.datum || ''));
+    return sort === 'datum_asc' ? cmp : -cmp;
+  });
+  _medienGalerieAnzeige = liste;
+
+  countEl.textContent = liste.length ? `(${liste.length})` : '';
+
+  if (!liste.length) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    empty.textContent = 'Keine Medien gefunden.';
+    return;
+  }
+  empty.style.display = 'none';
+
+  grid.innerHTML = liste.map((m, i) => {
+    let thumb = '', badge = '';
+    if (m.typ === 'bild') {
+      thumb = `<img src="${m.url}" alt="" loading="lazy">`;
+    } else if (m.typ === 'video') {
+      thumb = `<video src="${m.url}#t=0.1" preload="metadata" muted playsinline></video>`;
+      badge = '<span class="dash-medien-tile-typ">Video</span>';
+    } else {
+      const yt = _youtubeId(m.linkUrl);
+      thumb = yt
+        ? `<img src="https://img.youtube.com/vi/${yt}/hqdefault.jpg" alt="" loading="lazy" onerror="this.onerror=null;this.src='https://img.youtube.com/vi/${yt}/mqdefault.jpg'">`
+        : `<div style="display:flex;align-items:center;justify-content:center;height:100%;">${_shareIcon('film', '#94a3b8', 26)}</div>`;
+      badge = '<span class="dash-medien-tile-typ">Link</span>';
+    }
+    const datumText = m.datum
+      ? new Date(m.datum).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+    const diszName = escapeHtml(m.disziplin || 'Medium');
+    const diszHtml = m.leistungId
+      ? `<span class="mg-disz-link" onclick="openLeistungById(${m.leistungId})" title="Zur Leistung">${diszName}</span>`
+      : diszName;
+    const titel = diszHtml +
+      (datumText ? ` <span class="mg-datum">· ${escapeHtml(datumText)}</span>` : '');
+    const sub = [m.wettkampf, m.ort].filter(Boolean).map(escapeHtml).join(' · ');
+    return `<div class="medien-galerie-item">
+        <div class="medien-galerie-thumb" onclick="medienGalerieOeffnen(${i})">${thumb}${badge}</div>
+        <div class="medien-galerie-meta">
+          <div class="mg-disziplin">${titel}</div>
+          <div class="mg-sub">${sub}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function medienGalerieOeffnen(i) {
+  const m = _medienGalerieAnzeige[i];
+  if (!m) return;
+  if (m.typ === 'link') { window.open(m.linkUrl, '_blank', 'noopener'); return; }
+  if (m.url) openMedienLightbox(m.typ, m.url);
+}
+
+function closeMedienGalerie() {
+  const modal = document.getElementById('medienGalerieModal');
+  if (modal) modal.classList.remove('open');
 }
 
 /* ── Dashboard: Medien-Strip (alle Medien, sortiert nach Leistungs-Datum) ── */
@@ -1842,7 +2087,7 @@ async function renderDashboardMedien() {
       const yt = _youtubeId(m.url);
       inhalt = yt
         ? `<img src="https://img.youtube.com/vi/${yt}/hqdefault.jpg" alt="" loading="lazy" onerror="this.onerror=null;this.src='https://img.youtube.com/vi/${yt}/mqdefault.jpg'">`
-        : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.4em;">🎬</div>';
+        : `<div style="display:flex;align-items:center;justify-content:center;height:100%;">${_shareIcon('film', '#94a3b8', 24)}</div>`;
       badge = '<span class="dash-medien-tile-typ">Link</span>';
     } else {
       return; // ohne URL nichts anzeigen
@@ -1865,14 +2110,34 @@ async function renderDashboardMedien() {
   });
   card.style.display = strip.children.length ? 'block' : 'none';
 
-  // Mausrad → horizontal scrollen
+  // Mausrad → horizontal scrollen (fließend animiert statt ruckartig)
   if (!strip._wheelInit) {
     strip._wheelInit = true;
+    let ziel = null, raf = null;
+    const stoppeAnimation = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      ziel = null;
+    };
+    const animiere = () => {
+      if (ziel === null) { raf = null; return; }
+      const diff = ziel - strip.scrollLeft;
+      if (Math.abs(diff) < 0.8) { strip.scrollLeft = ziel; raf = null; ziel = null; return; }
+      strip.scrollLeft += diff * 0.16;
+      raf = requestAnimationFrame(animiere);
+    };
     strip.addEventListener('wheel', e => {
       if (!e.deltaY) return;
       e.preventDefault();
-      strip.scrollLeft += e.deltaY;
+      const max = strip.scrollWidth - strip.clientWidth;
+      if (ziel === null) ziel = strip.scrollLeft;
+      ziel = Math.max(0, Math.min(max, ziel + e.deltaY * 2));
+      if (!raf) raf = requestAnimationFrame(animiere);
     }, { passive: false });
+    // Scrollbalken-Drag oder Touch: Animation sofort stoppen,
+    // damit sie nicht gegen das manuelle Scrollen arbeitet
+    strip.addEventListener('pointerdown', stoppeAnimation, true);
+    strip.addEventListener('mousedown', stoppeAnimation, true);
+    strip.addEventListener('touchstart', stoppeAnimation, { capture: true, passive: true });
   }
 }
 
@@ -1894,7 +2159,7 @@ async function saveNotizen(leistungId, btnElement) {
     const { data: updatedLeistung, error: fetchError } = await supabaseClient
       .schema('la')
       .from('leistung')
-      .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+      .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)")
       .eq('id', leistungId)
       .single();
     
@@ -2884,12 +3149,7 @@ body.dark-mode .detail-info-item {
     border-color 0.18s ease;
 }
 
-body.dark-mode .detail-info-item:hover {
-  transform: translateX(3px);
-  border-top-color: var(--border-strong);
-  border-right-color: var(--border-subtle);
-  box-shadow: var(--shadow-md);
-}
+
 
 body.dark-mode .detail-info-label {
   color: var(--text-secondary);
@@ -4906,19 +5166,8 @@ tr.pb-row:hover {
       background: transparent !important;
     }
 
-    tr.pb-row td:first-child::before {
-      content: "";
-      display: inline-block;
-      width: 20px;
-      height: 20px;
-      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%23FFD700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>');
-      background-size: contain;
-      background-repeat: no-repeat;
-      vertical-align: middle;
-      margin-right: 6px;
-    }
-      filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.4));
-
+    /* PB-Kennzeichnung: Gold-Gradient + linke Goldkante reichen aus —
+       das frühere Medaillen-Icon vor dem Datum verschob die Datumsspalte */
     tr.year-separator {
       height: 2px;
       background: var(--surface-card);
@@ -6841,15 +7090,10 @@ tr.pb-row:hover {
       .detail-info-item {
     padding: 8px 12px;
     background: var(--input-bg);
-    border-radius: 4px;
-    border-left: 2px solid var(--btn-primary-bg);
-    transition: all 0.3s;
+    border-radius: 10px;
+    border-left: 3px solid var(--btn-primary-bg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
   }
-
-    .detail-info-item:hover {
-      box-shadow: 0 2px 8px var(--shadow-color);
-      transform: translateX(2px);
-    }
 
       .detail-info-label {
     font-size: 0.75em;
@@ -7856,7 +8100,7 @@ tr.pb-row:hover {
       display: block;
     }
     .medien-thumb-typ {
-      position: absolute; left: 4px; bottom: 4px;
+      position: absolute; top: 4px; right: 4px;
       background: rgba(15,23,42,0.65); color: #fff;
       border-radius: 5px; padding: 1px 5px;
       font-size: 0.68em; font-weight: 600;
@@ -7992,6 +8236,76 @@ tr.pb-row:hover {
     body.dark-mode .dash-medien-card { background: #1e293b !important; border-color: #334155 !important; }
     body.dark-mode .dash-medien-tile { background: var(--bg-elevated) !important; }
 
+    /* ─── Dashboard: Medien-Galerie (Header + Modal) ─── */
+    .dash-medien-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin: 6px 6px 10px;
+    }
+    .dash-medien-galerie-btn {
+      display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+      background: #ffffff; border: 1.5px solid #e2e8f0; color: #1e3a8a;
+      font-size: 0.8em; font-weight: 600; padding: 5px 11px; border-radius: 7px;
+      cursor: pointer; transition: background .15s, border-color .15s;
+    }
+    .dash-medien-galerie-btn:hover { background: #eef4ff; border-color: #1e3a8a; }
+    body.dark-mode .dash-medien-galerie-btn { background: #0f172a; border-color: #334155; color: #93c5fd; }
+
+    .medien-galerie-overlay {
+      display: none; position: fixed; inset: 0; z-index: 9500;
+      background: rgba(10,15,30,0.6);
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .medien-galerie-overlay.open { display: flex; }
+    .medien-galerie-modal {
+      background: #ffffff; border-radius: 14px;
+      width: min(1100px, 96vw); max-height: 92vh;
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.4);
+    }
+    .medien-galerie-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; background: linear-gradient(135deg,#1e3a8a 0%,#1e40af 100%);
+      flex-shrink: 0;
+    }
+    .medien-galerie-header h2 {
+      margin: 0; color: #ffffff; font-size: 1.05em; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .medien-galerie-count { font-weight: 500; font-size: 0.78em; color: rgba(255,255,255,0.72); }
+    .medien-galerie-controls {
+      display: flex; gap: 10px; flex-wrap: nowrap; padding: 14px 20px;
+      border-bottom: 1px solid #e8eef5; background: #f8fafc; flex-shrink: 0;
+    }
+    .medien-galerie-controls select {
+      flex: 1 1 0; min-width: 0;
+      padding: 8px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+      font-size: 0.85em; background: #fff; color: #1e293b; cursor: pointer; outline: none;
+    }
+    .medien-galerie-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px; padding: 18px 20px; overflow-y: auto;
+    }
+    .medien-galerie-item { display: flex; flex-direction: column; gap: 6px; }
+    .medien-galerie-thumb {
+      position: relative; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden;
+      background: #e8eef6; cursor: pointer; border: 1px solid #e2e8f0;
+    }
+    .medien-galerie-thumb img, .medien-galerie-thumb video {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    .medien-galerie-meta { font-size: 0.78em; line-height: 1.35; }
+    .medien-galerie-meta .mg-disziplin { font-weight: 700; color: #1e293b; }
+    .medien-galerie-meta .mg-disziplin .mg-datum { font-weight: 500; color: #64748b; }
+    .medien-galerie-meta .mg-disz-link { cursor: pointer; }
+    .medien-galerie-meta .mg-disz-link:hover { text-decoration: underline; color: #1e3a8a; }
+    body.dark-mode .medien-galerie-meta .mg-disz-link:hover { color: #93c5fd; }
+    .medien-galerie-meta .mg-sub { color: #64748b; }
+    .medien-galerie-empty { padding: 40px 20px; text-align: center; color: #94a3b8; }
+    body.dark-mode .medien-galerie-modal { background: #161b22; }
+    body.dark-mode .medien-galerie-controls { background: #1e293b; border-bottom-color: #334155; }
+    body.dark-mode .medien-galerie-controls select { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    body.dark-mode .medien-galerie-meta .mg-disziplin { color: #e2e8f0; }
+
     /* ─── Dashboard: Karten-Popup ─── */
     .dash-map-popup {
       display: none; position: fixed; inset: 0; z-index: 9000; /* niedrig: alle anderen Popups liegen darüber */
@@ -8104,6 +8418,51 @@ tr.pb-row:hover {
     .wk-detail-section + .wk-detail-section { border-top: 1px solid #e2e8f0; }
     body.dark-mode .wk-detail-card { background: #1e293b !important; border-color: #334155 !important; }
     body.dark-mode .wk-detail-section + .wk-detail-section { border-top-color: #2d3748; }
+
+    /* ─── Detail-Popup: Hero, Medaillen-Badge, PB-Badge ─── */
+    .detail-hero {
+      grid-column: span 6;
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px;
+      background: var(--input-bg);
+      border-radius: 10px;
+      border-left: 3px solid var(--btn-primary-bg);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    }
+    .detail-hero-icon { display: inline-flex; flex-shrink: 0; }
+    .detail-hero-icon img { width: 34px !important; height: 34px !important; }
+    .detail-hero-wert {
+      font-size: 1.9em; font-weight: 800; line-height: 1.1;
+      color: var(--text-primary, #1e293b);
+    }
+    .detail-hero-sub { font-size: 0.82em; color: var(--text-secondary, #64748b); margin-top: 3px; }
+    .detail-pb-badge {
+      margin-left: auto;
+      display: inline-flex; align-items: center; gap: 6px;
+      background: linear-gradient(135deg, #FFD700 0%, #f59e0b 100%);
+      color: #422006; font-weight: 700; font-size: 0.78em;
+      border-radius: 999px; padding: 5px 14px;
+      box-shadow: 0 1px 6px rgba(245,158,11,0.4);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .detail-platz-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 26px; height: 26px; padding: 0 8px;
+      border-radius: 999px;
+      background: var(--analyse-box-bg, #e8eef6);
+      color: var(--text-primary, #1e293b);
+      font-weight: 800; font-size: 0.95em;
+      margin-top: 1px;
+    }
+    .detail-platz-badge.gold   { background: linear-gradient(135deg, #FFD700, #f0b429); color: #422006; box-shadow: 0 1px 4px rgba(240,180,41,0.45); }
+    .detail-platz-badge.silber { background: linear-gradient(135deg, #e5e7eb, #b8bcc4); color: #1f2937; box-shadow: 0 1px 4px rgba(150,155,165,0.4); }
+    .detail-platz-badge.bronze { background: linear-gradient(135deg, #e0955f, #CD7F32); color: #3b2310; box-shadow: 0 1px 4px rgba(205,127,50,0.4); }
+    body.dark-mode .detail-hero { background: var(--bg-elevated) !important; border-left-color: var(--accent-primary) !important; }
+    body.dark-mode .detail-hero-wert { color: var(--text-primary) !important; }
+    @media (max-width: 600px) {
+      .detail-hero { flex-wrap: wrap; }
+      .detail-hero-wert { font-size: 1.5em; }
+    }
 
     /* CSV-Export-Buttons in Analyse: gleicher Stil wie in Leistungstabellen */
     .analyse-section .export-btn {
@@ -8567,11 +8926,9 @@ details,
 /* Tabelle in leistungenAusgabe: mindestens so breit wie Toolbar (900px),
    wächst automatisch mit wenn viele Spalten ausgewählt sind */
 #leistungenAusgabe {
-  width: fit-content;
-  min-width: min(900px, 100%);
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 0 24px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 #leistungenAusgabe .table-wrapper {
@@ -8588,6 +8945,71 @@ details,
 #leistungenAusgabe .table-wrapper table {
   width: max-content;
   min-width: 100%;
+}
+
+/* ============================================================
+   SCHWEBENDER HORIZONTALER SCROLLBALKEN (Leistungstabelle)
+   Bleibt am unteren Viewport-Rand, damit man nicht erst ans
+   Tabellenende scrollen muss. Steuerung: LtStickyScroll (JS).
+   ============================================================ */
+#ltStickyScroll {
+  position: fixed;
+  bottom: 0;
+  height: 15px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  z-index: 60;
+  display: none;
+  background: rgba(242, 246, 250, 0.94);
+  border-top: 1px solid #dde6f5;
+  box-shadow: 0 -2px 8px rgba(30, 58, 138, 0.10);
+  -webkit-overflow-scrolling: touch;
+}
+#ltStickyScrollInner { height: 1px; }
+body.dark-mode #ltStickyScroll {
+  background: rgba(30, 41, 59, 0.94);
+  border-top-color: #334155;
+}
+
+/* ============================================================
+   TAB-PANEL — zusammenhaengender Container (Optik wie Einstellungen)
+   Gruppiert Suche, Buttons, Anzahl und Liste in einer Karte.
+   ============================================================ */
+.tab-panel {
+  background: #f2f6fa;
+  border: 1px solid #dde6f5;
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(30, 58, 138, 0.10);
+  overflow: hidden;
+}
+.tab-panel-toolbar {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.tab-panel-body { padding: 14px 16px; }
+body.dark-mode .tab-panel { background: #1e293b; border-color: #334155; }
+body.dark-mode .tab-panel-toolbar { border-bottom-color: #2d3748; }
+
+/* In der Kachel: vorher graublaue Buttons/Karten werden weiß, damit sie sich
+   vom graublauen Kachel-Hintergrund abheben. */
+body:not(.dark-mode) .tab-panel .lwk-card,
+body:not(.dark-mode) .tab-panel .wk-filter-bar,
+body:not(.dark-mode) .tab-panel .results-info { background: #ffffff; }
+body:not(.dark-mode) #leistungenControlsPanel .lt-btn:not(.lt-active):not(:hover) { background: #ffffff; }
+
+/* Leistungen: Steuerung + Tabelle als eine Kachel. Breite kommt vom .lt-wrap
+   (gleich wie andere Tabs); Innen-Padding von .tab-panel-toolbar/.tab-panel-body. */
+#leistungenControlsPanel { margin: 0; overflow: visible; } /* Filter-/Spalten-Dropdowns nicht abschneiden */
+#leistungenControlsPanel #leistungenTopBar {
+  display: flex !important;
+  flex-direction: column;
+  gap: 10px;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 /* ============================================================
@@ -9136,6 +9558,10 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
     }
     @keyframes loaderSpin   { to { transform: rotate(360deg); } }
     @keyframes loaderFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  </style>
+
+  <!-- Responsive-Styles: eigener Block — darf NICHT mit dem Loader entfernt werden -->
+  <style id="responsive-styles">
 
 
     /* ================= TABLE SEARCH STYLING ================= */
@@ -9718,12 +10144,16 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 <!-- Einstellungen Seite -->
 <div id="einstellungenTab" class="tab-content">
   <div class="settings-page-body">
-    <div class="settings-inline-header">
-      <button class="settings-back-btn" onclick="settingsGoBack()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      </button>
-      <h2 class="settings-page-title">Einstellungen</h2>
-    </div>
+    <div class="wk-detail-card">
+      <div class="wk-detail-header">
+        <button class="settings-back-btn" onclick="settingsGoBack()" aria-label="Zurück">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="wk-detail-header-title">
+          <svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Einstellungen
+        </span>
+      </div>
 
     <!-- Profil -->
     <div class="settings-card">
@@ -9806,6 +10236,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
     </div>
 
 
+    </div><!-- /.wk-detail-card -->
   </div>
 </div>
 
@@ -10129,7 +10560,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                   <button type="button" class="dash-week-today-btn" id="dashWeekToday" onclick="dashWeekGoToday()" title="Aktuelle Woche">Heute</button>
                 </div>
                 <button type="button" class="dash-week-strip-link" onclick="switchTab('kalender')">
-                  Zum Kalender
+                  Kalender öffnen
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
               </div>
@@ -10141,10 +10572,16 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             <!-- Dashboard Inner Tabs -->
             <div id="dashInnerTabs" style="display:none;">
           <div class="dash-inner-card">
-          <h3 class="dashboard-section-title" style="margin:2px 0 12px;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-            Entwicklung
-          </h3>
+          <div class="dash-medien-head" style="margin:2px 0 12px;">
+            <h3 class="dashboard-section-title" style="margin:0;cursor:pointer;" onclick="switchTab('analyse');switchAnalyseSection('entwicklungen');" title="Entwicklungen in Analyse öffnen">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Entwicklung
+            </h3>
+            <button type="button" class="dash-medien-galerie-btn" onclick="switchTab('analyse');switchAnalyseSection('entwicklungen');">
+              Analyse öffnen
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
           <!-- Pane: Entwicklung (Karte ist jetzt ein Popup über die Mini-Karte) -->
           <div id="dashPaneEntwicklung" class="dash-inner-pane">
             <div id="dashTopDiszCharts" style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;"></div>
@@ -10168,10 +10605,16 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
             <!-- Medien-Strip (alle Medien, sortiert nach Leistungs-Datum) -->
             <div id="dashMedienCard" class="dash-medien-card" style="display:none;">
-              <h3 class="dashboard-section-title" style="margin:6px 6px 10px;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                Medien
-              </h3>
+              <div class="dash-medien-head">
+                <h3 class="dashboard-section-title" style="margin:0;cursor:pointer;" onclick="openMedienGalerie()" title="Galerie öffnen">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Medien
+                </h3>
+                <button type="button" class="dash-medien-galerie-btn" onclick="openMedienGalerie()">
+                  Galerie öffnen
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
               <div id="dashMedienStrip" class="dash-medien-strip"></div>
             </div>
 
@@ -10286,12 +10729,13 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             min-width: 170px; text-align: center;
           }
           .dash-week-strip-link {
-            background: transparent; border: none; cursor: pointer;
+            background: #ffffff; border: 1.5px solid #e2e8f0; cursor: pointer;
             color: #1e3a8a; font-size: 0.85em; font-weight: 600;
             display: inline-flex; align-items: center; gap: 4px;
-            padding: 4px 10px; border-radius: 6px;
+            padding: 4px 10px; border-radius: 7px;
+            transition: background 0.15s, border-color 0.15s;
           }
-          .dash-week-strip-link:hover { background: #eef4ff; }
+          .dash-week-strip-link:hover { background: #eef4ff; border-color: #1e3a8a; }
           .dash-week-strip-grid {
             display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
             padding: 0 16px 16px;
@@ -10836,6 +11280,11 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
         <!-- Main content area -->
         <div id="leistungenMain">
 
+          <!-- Gleiche Breite wie andere Tabs (max 900px + 24px Padding) -->
+          <div style="width:100%; max-width:900px; margin:0 auto; padding:0 24px; box-sizing:border-box;">
+          <!-- Steuerung + Tabelle als eine zusammenhängende Kachel -->
+          <div class="tab-panel" id="leistungenControlsPanel">
+            <div class="tab-panel-toolbar">
           <!-- Top bar: Suche | Spalten | Filter -->
           <div id="leistungenTopBar">
 
@@ -10909,13 +11358,16 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
               <div id="leistungenAnzahl"></div>
             </div>
 
-          </div>
-
-          <!-- Active filter chips (below the top bar) -->
-          <div id="ltChipsContainer"></div>
-
-          <!-- Table output -->
-          <div id="leistungenAusgabe"></div>
+            <!-- Active filter chips -->
+            <div id="ltChipsContainer"></div>
+          </div><!-- /#leistungenTopBar -->
+            </div><!-- /.tab-panel-toolbar -->
+            <div class="tab-panel-body">
+              <!-- Table output -->
+              <div id="leistungenAusgabe"></div>
+            </div><!-- /.tab-panel-body -->
+          </div><!-- /#leistungenControlsPanel -->
+          </div><!-- /.lt-wrap -->
 
         </div>
 
@@ -11316,9 +11768,10 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
           <!-- LIST VIEW -->
           <div id="wkListView">
-            <!-- Toolbar: Zeile 1 – Suche + CTA, Zeile 2 – Segmented Control -->
-            <div class="wk-toolbar">
-              <div class="wk-toolbar-row">
+            <!-- Steuerung + Liste als zusammenhängende Karte (wie Einstellungen) -->
+            <div class="tab-panel">
+              <div class="tab-panel-toolbar">
+                <div class="wk-toolbar-row">
                 <!-- Suchleiste (volle Breite, da CTA-Button entfernt) -->
                 <div class="wk-search-wrap" style="flex:1;">
                   <svg class="wk-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -11328,14 +11781,14 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
                 </div>
+                </div>
+                <!-- Anzahl gefundener Wettkämpfe + CSV-Export -->
+                <div id="wkAnzahl"></div>
+              </div><!-- /.tab-panel-toolbar -->
+              <div class="tab-panel-body">
+                <div id="wkListe" style="display: flex; flex-direction: column; gap: 10px;"></div>
               </div>
-            </div>
-            <!-- Anzahl gefundener Wettkämpfe + CSV-Export -->
-            <div id="wkAnzahl"></div>
-            <!-- Karten-Liste -->
-            <div style="background:#f2f6fa; border-radius:10px; padding:16px; box-shadow:0 2px 10px rgba(0,0,0,0.08); border:1px solid #e8eef5;">
-              <div id="wkListe" style="display: flex; flex-direction: column; gap: 10px;"></div>
-            </div>
+            </div><!-- /.tab-panel -->
           </div>
 
           <!-- DETAIL VIEW -->
@@ -11386,7 +11839,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
           <button type="button" onclick="ortZuruecksetzen('wkFormOrt','wkOrtBadge')" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:1em;padding:0;line-height:1;">×</button>
         </div>
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:14px;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
         <div>
           <label style="display:block; margin-bottom:5px; font-weight:600; font-size:0.88em; color:#333;">Startdatum *</label>
           <input type="date" id="wkFormStart" required style="width:100%; padding:9px; border:2px solid #e0e0e0; border-radius:8px; font-size:0.9em; box-sizing:border-box;">
@@ -11402,6 +11855,10 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
             <option value="f">Freiluft</option>
             <option value="h">Halle</option>
           </select>
+        </div>
+        <div>
+          <label style="display:block; margin-bottom:5px; font-weight:600; font-size:0.88em; color:#333;">Meisterschaft</label>
+          <input type="text" id="wkFormMs" placeholder="z.B. DM, EM, WM" style="width:100%; padding:9px; border:2px solid #e0e0e0; border-radius:8px; font-size:0.9em; box-sizing:border-box;">
         </div>
       </div>
       <p style="font-size:0.8em; color:#666; margin:0 0 14px;">* Pflichtfeld</p>
@@ -11885,7 +12342,7 @@ body.dark-mode .profile-dropdown-logout .profile-dropdown-icon { color: #f87171;
 
     <!-- Footer -->
     <footer id="appFooter" class="app-footer">
-      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.3.2</span></span>
+      <span style="font-size:0.75em; color:#94a3b8; white-space:nowrap;">&copy; <span id="footerYear"></span> TrackUp &nbsp;·&nbsp; <span style="font-size:0.9em; opacity:0.75;">v7.3.3</span></span>
       <nav style="display:flex; gap:14px;">
         <a href="impressum.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Impressum</a>
         <a href="datenschutz.html" style="font-size:0.75em; color:#94a3b8; text-decoration:none; transition:color 0.15s;" onmouseover="this.style.color='#1e3a8a'" onmouseout="this.style.color='#94a3b8'">Datenschutz</a>
@@ -13289,7 +13746,7 @@ async function ladeFilterOptionen() {
   }
 
   const { data: msData, error: msError } = await supabaseClient
-    .schema("la").from("leistung")
+    .schema("la").from("wettkampf")
     .select("ms")
     .eq("athlet_id", selectedAthleteId)
     .not("ms", "is", null);
@@ -13794,6 +14251,38 @@ function alleFilterZuruecksetzen() {
 }
 
 /* ================= LEISTUNGEN ================= */
+/* Sortier-Helfer für die Leistungstabelle: Einträge ohne Wert landen
+   IMMER unten – egal ob auf- oder absteigend sortiert wird. */
+const LT_NUMERISCHE_SPALTEN = new Set(['leistung', 'score', 'platzierung']);
+
+function _ltSortWert(row, col) {
+  if (col === 'datum') return row.datum ?? row.wettkampf?.startdatum ?? null;
+  if (col === 'ort')   return row.wettkampf?.ort_display ?? row.wettkampf?.ort ?? null;
+  if (col === 'wk_bz') return row.wettkampf?.bezeichnung ?? null;
+  if (col === 'typ')   return row.wettkampf?.saison ?? row.typ ?? null;
+  if (col === 'ms')    return row.wettkampf?.ms ?? row.ms ?? null;
+  return row[col] ?? null;
+}
+
+function _ltVergleich(a, b, col, asc) {
+  const av = _ltSortWert(a, col);
+  const bv = _ltSortWert(b, col);
+  const aLeer = av === null || av === undefined || av === '';
+  const bLeer = bv === null || bv === undefined || bv === '';
+  if (aLeer && bLeer) return 0;
+  if (aLeer) return 1;   // ohne Wert immer ans Ende
+  if (bLeer) return -1;
+  let cmp;
+  if (col === 'datum') {
+    cmp = new Date(av) - new Date(bv);
+  } else if (LT_NUMERISCHE_SPALTEN.has(col)) {
+    cmp = Number(av) - Number(bv);
+  } else {
+    cmp = String(av).localeCompare(String(bv), 'de', { numeric: true });
+  }
+  return asc ? cmp : -cmp;
+}
+
 async function ladeLeistungen(optionen) {
   const leistungenTab = document.getElementById("leistungenTab");
   if(!leistungenTab) {
@@ -13809,7 +14298,7 @@ async function ladeLeistungen(optionen) {
   // Felder die jetzt über wettkampf-Join kommen, nicht direkt als DB-Spalten anfragen
   // "typ" kommt jetzt aus wettkampf.saison (nicht mehr aus la.leistung.typ)
   // "datum" ist eine echte Spalte auf leistung — wird immer geladen (nicht über wettkampf-Join)
-  const WETTKAMPF_JOIN_FELDER = new Set(["ort", "wk_bz", "typ"]);
+  const WETTKAMPF_JOIN_FELDER = new Set(["ort", "wk_bz", "typ", "ms"]);
   const colsForQuery = cols.filter(c => !WETTKAMPF_JOIN_FELDER.has(c));
   if(!colsForQuery.includes('athlet_id')) colsForQuery.push('athlet_id');
   if(!colsForQuery.includes('disziplin')) colsForQuery.push('disziplin');
@@ -13820,7 +14309,7 @@ async function ladeLeistungen(optionen) {
 
   // Wettkampf-basierte Filter (Ort, Wettkampf, Saison, Datum/Jahr) brauchen einen
   // !inner-Join — sonst filtert PostgREST eingebettete Spalten nicht auf Zeilenebene
-  const WETTKAMPF_FILTER_MAP = { ort: 'wettkampf.ort', wk_bz: 'wettkampf.bezeichnung', typ: 'wettkampf.saison' };
+  const WETTKAMPF_FILTER_MAP = { ort: 'wettkampf.ort', wk_bz: 'wettkampf.bezeichnung', typ: 'wettkampf.saison', ms: 'wettkampf.ms' };
   const _wkFilterAktiv = Array.from(document.querySelectorAll(
     "#filterContainer [data-filter], #filterContainer [data-filter-dropdown], #filterContainer [data-filter-jahr], #filterContainer [data-filter-from], #filterContainer [data-filter-to]"
   )).some(i => i.value && (
@@ -13830,7 +14319,7 @@ async function ladeLeistungen(optionen) {
     i.dataset.filterFrom === 'datum' || i.dataset.filterTo === 'datum'
   ));
   const _wkJoin = _wkFilterAktiv ? 'wettkampf!inner' : 'wettkampf';
-  let query = supabaseClient.schema("la").from("leistung").select(colsForQuery.join(",") + ",score,status,wettkampf_id," + _wkJoin + "(id,bezeichnung,startdatum,enddatum,ort,ort_display,saison)");
+  let query = supabaseClient.schema("la").from("leistung").select(colsForQuery.join(",") + ",score,status,wettkampf_id," + _wkJoin + "(id,bezeichnung,startdatum,enddatum,ort,ort_display,saison,ms)");
 
   // Verwende ausgewählten Athleten
   if(selectedAthleteId) query = query.eq("athlet_id", selectedAthleteId);
@@ -13839,16 +14328,10 @@ async function ladeLeistungen(optionen) {
   // Geplante, DNS und DNF werden hier ausgeblendet
   query = query.or('status.eq.abgeschlossen,status.is.null');
 
-  // Standard-Sortierung nach Datum (neueste zuerst), wenn keine andere Sortierung aktiv
-  // ABER: Sortierung wird jetzt manuell gemacht (siehe unten)
-  let manuellesSortieren = false;
-  if(sortSpalte === "leistung") {
-    manuellesSortieren = true;
-    // Keine Supabase-Sortierung für Leistung, da wir null-Werte manuell ans Ende packen
-  } else if(sortSpalte) {
-    query = query.order(sortSpalte, { ascending: sortAsc });
-  } else if(cols.includes("datum")) {
-    // Sortierung nach Datum client-seitig (PostgREST kann nicht nach embedded columns sortieren)
+  // Sortierung erfolgt vollständig client-seitig (siehe unten), damit Einträge
+  // ohne Wert immer ans Ende kommen und auch abgeleitete Spalten (Ort,
+  // Wettkampf, …) sortierbar sind, die PostgREST nicht ordnen kann.
+  if(!sortSpalte && cols.includes("datum")) {
     sortSpalte = "datum";
     sortAsc = false;
   }
@@ -13932,7 +14415,10 @@ async function ladeLeistungen(optionen) {
     }
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+  // Sicherheitsnetz: nur abgeschlossene Leistungen MIT Ergebnis anzeigen und
+  // zählen — identische Logik wie die Dashboard-Statistik
+  if (data) data = data.filter(l => (!l.status || l.status === 'abgeschlossen') && l.leistung != null);
   // Helper: einheitlicher Empty-State für die Leistungen-Tabelle
   const leistungenEmptyState = `<div class="empty-state">
     <div class="empty-state-icon"><svg style="vertical-align:-0.125em" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></div>
@@ -13960,7 +14446,7 @@ async function ladeLeistungen(optionen) {
   if(selectedAthleteId) {
     const { data: allData } = await supabaseClient
       .schema("la").from("leistung")
-      .select("id, datum, athlet_id, disziplin, leistung, einheit, ak, typ, ms, runde, platzierung, score, notizen, geschlecht, status, wettkampf_id, wettkampf(id,bezeichnung,startdatum,enddatum,ort,ort_display,saison)")
+      .select("id, datum, athlet_id, disziplin, leistung, einheit, ak, typ, ms, runde, platzierung, score, notizen, geschlecht, status, wettkampf_id, wettkampf(id,bezeichnung,startdatum,enddatum,ort,ort_display,saison,ms)")
       .eq("athlet_id", selectedAthleteId);
     // Für PB-Berechnung und Analyse nur abgeschlossene Leistungen verwenden (Fallback: kein Status = abgeschlossen)
     alleLeistungenFuerPBs = (allData || []).filter(l => !l.status || l.status === 'abgeschlossen');
@@ -13973,31 +14459,10 @@ async function ladeLeistungen(optionen) {
     if (typeof dbLoadEvents    === 'function') await dbLoadEvents(selectedAthleteId);
   }
 
-  // Sortierung client-seitig (PostgREST kann nicht nach embedded columns sortieren)
+  // Client-seitige Sortierung: Einträge ohne Wert landen immer unten
   let sortierteDaten = data;
-  if(sortSpalte === 'datum') {
-    sortierteDaten = [...data].sort((a, b) => {
-      const da = new Date(a.datum || a.wettkampf?.startdatum || 0);
-      const db = new Date(b.datum || b.wettkampf?.startdatum || 0);
-      return sortAsc ? da - db : db - da;
-    });
-  } else if(manuellesSortieren) {
-    sortierteDaten = [...data].sort((a, b) => {
-      const aLeistung = a.leistung;
-      const bLeistung = b.leistung;
-      
-      // null-Werte immer ans Ende
-      if(aLeistung === null && bLeistung === null) return 0;
-      if(aLeistung === null) return 1;
-      if(bLeistung === null) return -1;
-      
-      // Normale Sortierung
-      if(sortAsc) {
-        return aLeistung - bLeistung;
-      } else {
-        return bLeistung - aLeistung;
-      }
-    });
+  if(sortSpalte) {
+    sortierteDaten = [...data].sort((a, b) => _ltVergleich(a, b, sortSpalte, sortAsc));
   }
 
   // Filtere die Daten auf nur die vom Benutzer ausgewählten Spalten für die Anzeige
@@ -14014,6 +14479,9 @@ async function ladeLeistungen(optionen) {
       } else if (col === "typ") {
         // Saison kommt jetzt aus wettkampf.saison (früher la.leistung.typ)
         filtered["typ"] = row.wettkampf?.saison ?? row.typ ?? null;
+      } else if (col === "ms") {
+        // Meisterschaft liegt jetzt am Wettkampf (Fallback: alte leistung.ms)
+        filtered["ms"] = row.wettkampf?.ms ?? row.ms ?? null;
       } else if(row.hasOwnProperty(col)) {
         filtered[col] = row[col];
       }
@@ -14052,7 +14520,7 @@ async function zeigeLeistungsTabelle() {
   // Baue Query mit allen Filtern - WICHTIG: score aus der Datenbank holen
   const _wkJoinTop = _stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient.schema("la").from("leistung")
-    .select(`id, datum, disziplin, leistung, einheit, score, wettkampf_id, ${_wkJoinTop}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+    .select(`id, datum, disziplin, leistung, einheit, score, wettkampf_id, ${_wkJoinTop}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null)
     .not("score", "is", null); // Nur Leistungen mit Score
@@ -14063,7 +14531,7 @@ async function zeigeLeistungsTabelle() {
   if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
   if (ak) query = query.ilike("ak", `%${ak}%`);
   if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
-  if (ms) query = query.eq("ms", ms);
+  if (ms) query = query.eq("wettkampf.ms", ms);
 
   const { data: rawData2, error } = await query;
   
@@ -14226,7 +14694,7 @@ async function berechneDurchschnitt(typ) {
   const _wkJoinAvg = _stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient.schema("la").from("leistung")
     .select(`leistung, platzierung, disziplin, wettkampf_id,
-             ${_wkJoinAvg}(id, bezeichnung, startdatum, ort, ort_display, saison)`)
+             ${_wkJoinAvg}(id, bezeichnung, startdatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", athletId)
     .not(typ, "is", null);
 
@@ -14235,7 +14703,7 @@ async function berechneDurchschnitt(typ) {
   if (wk)     query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
   if (ak)     query = query.ilike("ak", `%${ak}%`);
   if (saison) query = query.eq("wettkampf.saison", saison);
-  if (ms)     query = query.eq("ms", ms);
+  if (ms)     query = query.eq("wettkampf.ms", ms);
 
   let zeitraumText = "Gesamt";
   if (filterZeitraum === 'custom') {
@@ -14569,6 +15037,75 @@ function addRowClickHandlers() {
 }
 
 /* ================= ZEIGE TABELLE MIT PBS ================= */
+/* ============================================================
+   Schwebender horizontaler Scrollbalken fuer die Leistungstabelle.
+   Bleibt am unteren Viewport-Rand sichtbar, sodass man nicht erst
+   ans Tabellenende scrollen muss, um horizontal zu scrollen.
+   Nur Desktop (Mobile: Touch-Scroll + Bottom-Nav).
+   ============================================================ */
+const LtStickyScroll = (() => {
+  let bar = null, inner = null, syncing = false, listening = false;
+
+  const getWrapper = () => document.querySelector('#leistungenAusgabe .table-wrapper');
+
+  function ensureBar() {
+    if (bar) return;
+    bar = document.createElement('div');
+    bar.id = 'ltStickyScroll';
+    inner = document.createElement('div');
+    inner.id = 'ltStickyScrollInner';
+    bar.appendChild(inner);
+    document.body.appendChild(bar);
+    bar.addEventListener('scroll', () => {
+      if (syncing) return;
+      const w = getWrapper();
+      if (!w) return;
+      syncing = true; w.scrollLeft = bar.scrollLeft; syncing = false;
+    }, { passive: true });
+  }
+
+  function update() {
+    const w = getWrapper();
+    if (!w || window.innerWidth <= 768 || w.scrollWidth <= w.clientWidth + 1) {
+      if (bar) bar.style.display = 'none';
+      return;
+    }
+    const rect = w.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const realBarVisible = rect.bottom <= vh;        // echter Scrollbalken sichtbar
+    const inView = rect.top < vh && rect.bottom > 0; // Tabelle im Viewport
+    if (realBarVisible || !inView) {
+      if (bar) bar.style.display = 'none';
+      return;
+    }
+    ensureBar();
+    bar.style.display = 'block';
+    bar.style.left = rect.left + 'px';
+    bar.style.width = rect.width + 'px';
+    inner.style.width = w.scrollWidth + 'px';
+    syncing = true; bar.scrollLeft = w.scrollLeft; syncing = false;
+  }
+
+  function attach() {
+    const w = getWrapper();
+    if (w && !w.dataset.ltScrollBound) {
+      w.dataset.ltScrollBound = '1';
+      w.addEventListener('scroll', () => {
+        if (syncing || !bar) return;
+        syncing = true; bar.scrollLeft = w.scrollLeft; syncing = false;
+      }, { passive: true });
+    }
+    if (!listening) {
+      listening = true;
+      window.addEventListener('scroll', update, { passive: true });
+      window.addEventListener('resize', update);
+    }
+    update();
+  }
+
+  return { attach, update };
+})();
+
 function zeigeTabelleMitPBs(angezeigteDaten, vollstaendigeDaten, ziel, sortierbar=false){
   if(!angezeigteDaten || angezeigteDaten.length===0){
     // Im Leistungen-Tab: klare CTA, sonst dezenter Hinweis
@@ -14722,6 +15259,9 @@ function zeigeTabelleMitPBs(angezeigteDaten, vollstaendigeDaten, ziel, sortierba
   document.getElementById(ziel).innerHTML = html;
   // Pop-up-Klick-Handler direkt nach dem Rendern setzen
   setTimeout(addRowClickHandlers, 50);
+  if (ziel === "leistungenAusgabe" && typeof LtStickyScroll !== "undefined") {
+    requestAnimationFrame(() => LtStickyScroll.attach());
+  }
 }
 
 /* ================= ZEIGE TABELLE ================= */
@@ -15046,7 +15586,7 @@ async function zeigePBs() {
   const _wkJoinPB = (istAnalyseTabAktiv && _blWkFilterAktiv()) ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select(`*, wettkampf_id, ${_wkJoinPB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+    .select(`*, wettkampf_id, ${_wkJoinPB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null); // Nur Einträge mit Leistung
   
@@ -15067,7 +15607,7 @@ async function zeigePBs() {
     if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
     if (ak) query = query.ilike("ak", `%${ak}%`);
     if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
-    if (ms) query = query.eq("ms", ms);
+    if (ms) query = query.eq("wettkampf.ms", ms);
     
     if (filterZeitraum === 'custom') {
       const von = document.getElementById("bestleistungenFilterVon").value;
@@ -15251,6 +15791,9 @@ function zeigePBsSBsTabelle(daten, icon, titel, jahr = null, mitJahrTrennung = f
   
   // Pop-up-Handler nach Rendern setzen
   setTimeout(addRowClickHandlers, 50);
+  if (!istAnalyseTabAktiv && typeof LtStickyScroll !== "undefined") {
+    requestAnimationFrame(() => LtStickyScroll.attach());
+  }
 }
 
 /* ================= SORTIERUNG FÜR PBS/SBS ================= */
@@ -15424,7 +15967,7 @@ async function zeigeSBs() {
   const _wkJoinSB = (istAnalyseTabAktiv && _blWkFilterAktiv()) ? "wettkampf!inner" : "wettkampf";
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select(`*, wettkampf_id, ${_wkJoinSB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+    .select(`*, wettkampf_id, ${_wkJoinSB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null); // Nur Einträge mit Leistung
   
@@ -15443,7 +15986,7 @@ async function zeigeSBs() {
     if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
     if (ak) query = query.ilike("ak", `%${ak}%`);
     if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
-    if (ms) query = query.eq("ms", ms);
+    if (ms) query = query.eq("wettkampf.ms", ms);
   }
 
   const { data: rawData, error } = await query;
@@ -15533,7 +16076,7 @@ async function zeigeAlleSBs() {
   const _wkJoinAllSB = (istAnalyseTabAktivAllSBs && _blWkFilterAktiv()) ? "wettkampf!inner" : "wettkampf";
   let queryAllSBs = supabaseClient
     .schema("la").from("leistung")
-    .select(`*, wettkampf_id, ${_wkJoinAllSB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+    .select(`*, wettkampf_id, ${_wkJoinAllSB}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", athletId)
     .not("leistung", "is", null);
 
@@ -15552,7 +16095,7 @@ async function zeigeAlleSBs() {
     if (wk) queryAllSBs = queryAllSBs.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
     if (ak) queryAllSBs = queryAllSBs.ilike("ak", `%${ak}%`);
     if (filterTyp) queryAllSBs = queryAllSBs.eq("wettkampf.saison", filterTyp);
-    if (ms) queryAllSBs = queryAllSBs.eq("ms", ms);
+    if (ms) queryAllSBs = queryAllSBs.eq("wettkampf.ms", ms);
     if (filterZeitraum === 'custom') {
       const von = document.getElementById("bestleistungenFilterVon").value;
       const bis = document.getElementById("bestleistungenFilterBis").value;
@@ -16731,7 +17274,7 @@ async function zeigeDiagramm() {
     // Query für erste Disziplin  
     const _wkJoinD = (jahr || from || to) ? "wettkampf!inner" : "wettkampf";
     let query1 = supabaseClient.schema("la").from("leistung")
-        .select(`id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, ${_wkJoinD}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+        .select(`id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, ${_wkJoinD}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
         .eq("athlet_id", athletId)
         .eq("disziplin", disziplin)
 if (jahr) {
@@ -16853,7 +17396,7 @@ if (jahr) {
     
     if (vergleichsModus && vergleichsDisziplin) {
         let query2 = supabaseClient.schema("la").from("leistung")
-            .select(`id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, ${_wkJoinD}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+            .select(`id, datum, leistung, score, disziplin, platzierung, ak, typ, wettkampf_id, ${_wkJoinD}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
             .eq("athlet_id", athletId)
             .eq("disziplin", vergleichsDisziplin)
 if (jahr) {
@@ -18708,12 +19251,13 @@ function _stZeitraumWert() {
    auf Zeilenebene — diese Helper entscheiden, ob ein !inner-Join nötig ist. */
 function _stWkFilterAktiv() {
   const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  return !!(v('statistikFilterOrt') || v('statistikFilterWK') || v('statistikFilterTyp'));
+  return !!(v('statistikFilterOrt') || v('statistikFilterWK') || v('statistikFilterTyp') || v('statistikFilterMS'));
 }
 function _blWkFilterAktiv() {
   const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
   return !!(v('bestleistungenFilterOrt') || v('bestleistungenFilterWK') ||
-            v('bestleistungenFilterTyp') || v('bestleistungenFilterZeitraum'));
+            v('bestleistungenFilterTyp') || v('bestleistungenFilterMS') ||
+            v('bestleistungenFilterZeitraum'));
 }
 
 function _triggerActiveStatistik() {
@@ -19279,6 +19823,23 @@ function showOrtLeistungenByKey(latLonKey, display, leistungen) {
   renderOrtPopup();
 }
 
+// Ort-Popup aus dem Leistungs-Detail öffnen (Name-Match statt Koordinaten)
+function openOrtPopupAusDetail(ortName) {
+  if (!ortName) return;
+  const quelle = (typeof alleLeistungenFuerPBs !== 'undefined' && Array.isArray(alleLeistungenFuerPBs)) ? alleLeistungenFuerPBs : [];
+  const key = String(ortName).toLowerCase().trim();
+  currentOrtLeistungen = quelle.filter(l => {
+    const o = (l.wettkampf?.ort_display || l.wettkampf?.ort || '').toLowerCase().trim();
+    return o === key;
+  });
+  currentOrtName = ortName;
+  if (!currentOrtLeistungen.length) return;
+  ortTableSortColumn = 'startdatum';
+  ortTableSortAsc = false;
+  sortOrtTable();
+  renderOrtPopup();
+}
+
 // Funktion zum Anzeigen von Leistungen eines Ortes als POPUP (Legacy)
 function showOrtLeistungen(ort, leistungen) {
   currentOrtLeistungen = leistungen.filter(l => normalizeOrtName(l.wettkampf?.ort) === ort);
@@ -19528,14 +20089,9 @@ function hideOrtLeistungen() {
     .detail-info-item {
       padding: 8px 12px;
       background: var(--input-bg);
-      border-radius: 6px;
+      border-radius: 10px;
       border-left: 3px solid var(--btn-primary-bg);
-      transition: all 0.3s;
-    }
-
-    .detail-info-item:hover {
-      box-shadow: 0 2px 8px var(--shadow-color);
-      transform: translateX(2px);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
     }
 
     .detail-info-label {
@@ -20229,7 +20785,7 @@ async function displayGoals(athletId) {
   try {
     const { data: leistungen, error } = await supabaseClient
       .schema('la').from('leistung')
-      .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+      .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)")
       .eq('athlet_id', athletId)
 if (error) throw error;
     
@@ -21228,7 +21784,7 @@ async function berechneErfolgsquote() {
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select(`*, wettkampf_id, ${_stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+    .select(`*, wettkampf_id, ${_stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", selectedAthleteId)
     .not("platzierung", "is", null);
   
@@ -21237,7 +21793,7 @@ async function berechneErfolgsquote() {
   if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
   if (ak) query = query.ilike("ak", `%${ak}%`);
   if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
-  if (ms) query = query.eq("ms", ms);
+  if (ms) query = query.eq("wettkampf.ms", ms);
   
   const { data: rawData4, error } = await query;
   
@@ -21310,7 +21866,7 @@ async function zeigeSaisonvergleich() {
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select(`*, wettkampf_id, ${_stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+    .select(`*, wettkampf_id, ${_stWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", selectedAthleteId)
     .not("leistung", "is", null);
   
@@ -21319,7 +21875,7 @@ async function zeigeSaisonvergleich() {
   if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
   if (ak) query = query.ilike("ak", `%${ak}%`);
   if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
-  if (ms) query = query.eq("ms", ms);
+  if (ms) query = query.eq("wettkampf.ms", ms);
   
   const { data, error } = await query;
   
@@ -21425,7 +21981,7 @@ async function zeigeWettkampffrequenz() {
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select("*, wettkampf_id, wettkampf!inner(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select("*, wettkampf_id, wettkampf!inner(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)")
     .eq("athlet_id", selectedAthleteId)
     .not("wettkampf.startdatum", "is", null)
 if (disziplin) query = query.ilike("disziplin", `%${disziplin}%`);
@@ -21433,7 +21989,7 @@ if (disziplin) query = query.ilike("disziplin", `%${disziplin}%`);
   if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
   if (ak) query = query.ilike("ak", `%${ak}%`);
   if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
-  if (ms) query = query.eq("ms", ms);
+  if (ms) query = query.eq("wettkampf.ms", ms);
   
   const { data: rawData5, error } = await query;
   
@@ -21557,7 +22113,7 @@ async function zeigePBTimeline() {
   // Baue Query
   let query = supabaseClient
     .schema("la").from("leistung")
-    .select(`*, wettkampf_id, ${_blWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)`)
+    .select(`*, wettkampf_id, ${_blWkFilterAktiv() ? "wettkampf!inner" : "wettkampf"}(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)`)
     .eq("athlet_id", selectedAthleteId)
     .not("leistung", "is", null);
   
@@ -21566,7 +22122,7 @@ async function zeigePBTimeline() {
   if (wk) query = query.filter("wettkampf.bezeichnung", "ilike", `%${wk}%`);
   if (ak) query = query.ilike("ak", `%${ak}%`);
   if (filterTyp) query = query.eq("wettkampf.saison", filterTyp);
-  if (ms) query = query.eq("ms", ms);
+  if (ms) query = query.eq("wettkampf.ms", ms);
   
   if (filterZeitraum === 'custom') {
     const von = document.getElementById("bestleistungenFilterVon").value;
@@ -21722,7 +22278,7 @@ function openAddLeistungModal() {
 async function openEditLeistungModal(leistungId) {
   const { data, error } = await supabaseClient
     .schema('la').from('leistung')
-    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+    .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)")
     .eq('id', leistungId)
     .single();
   
@@ -21756,7 +22312,6 @@ async function openEditLeistungModal(leistungId) {
   document.getElementById('modalPlatzierung').value = data.platzierung || '';
   document.getElementById('modalAK').value = data.ak || '';
   document.getElementById('modalRunde').value = data.runde || '';
-  document.getElementById('modalMs').value = data.ms || '';
   const _mnEdit = document.getElementById('modalNotizen');
   if (_mnEdit) _mnEdit.value = data.notizen || '';
 
@@ -21902,7 +22457,6 @@ async function saveLeistung(event) {
     platzierung: parseInt(document.getElementById('modalPlatzierung').value) || null,
     ak: ak || null,
     runde: document.getElementById('modalRunde').value || null,
-    ms: document.getElementById('modalMs').value || null,
     einheit: document.getElementById('modalEinheit')?.value || null,
     geschlecht: geschlecht,
     status: berechneterStatus,  // automatisch bestimmter Status
@@ -21946,7 +22500,7 @@ async function saveLeistung(event) {
     if (detailPopup && detailPopup.style.display !== 'none') {
       const { data: updatedData } = await supabaseClient
         .schema('la').from('leistung')
-        .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison)")
+        .select("*, wettkampf_id, wettkampf(id, bezeichnung, startdatum, enddatum, ort, ort_display, saison, ms)")
         .eq('id', leistungId)
         .single();
       if (updatedData) openDetailPopup(updatedData);
@@ -22404,6 +22958,8 @@ function _renderAlleSpalten(searchTerm) {
         filtered["ort"] = row.wettkampf?.ort_display ?? row.wettkampf?.ort ?? null;
       } else if (col === "wk_bz") {
         filtered["wk_bz"] = row.wettkampf?.bezeichnung ?? null;
+      } else if (col === "ms") {
+        filtered["ms"] = row.wettkampf?.ms ?? row.ms ?? null;
       } else if (Object.prototype.hasOwnProperty.call(row, col)) {
         filtered[col] = row[col];
       }
@@ -22772,20 +23328,12 @@ function vergleicheLeistungen(leistung1, leistung2, disziplin) {
 
       </div><!-- Ende Ergebnis-Gruppe -->
 
-      <!-- Altersklasse + Meisterschaft (immer sichtbar) -->
+      <!-- Altersklasse + Runde -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
         <div>
           <label style="display: block; margin-bottom: 6px; color: #333; font-weight: 600; font-size: 0.9em;">Altersklasse *</label>
-          <input type="text" id="modalAK" required placeholder="z.B. U20" style="width: 100%; padding: 9px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.9em;">
+          <input type="text" id="modalAK" required placeholder="z.B. U20" style="width: 100%; padding: 9px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.9em; box-sizing: border-box;">
         </div>
-        <div>
-          <label style="display: block; margin-bottom: 6px; color: #333; font-weight: 600; font-size: 0.9em;">Meisterschaft</label>
-          <input type="text" id="modalMs" placeholder="z.B. DM, EM, WM" style="width: 100%; padding: 9px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.9em;">
-        </div>
-      </div>
-
-      <!-- Runde + Status -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
         <div>
           <label style="display: block; margin-bottom: 6px; color: #333; font-weight: 600; font-size: 0.9em;">Runde</label>
           <select id="modalRunde" style="width: 100%; padding: 9px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.9em; background: #ffffff; color: #333; cursor: pointer;">
@@ -22798,6 +23346,10 @@ function vergleicheLeistungen(leistung1, leistung2, disziplin) {
             <option value="hf">Halbfinale</option>
           </select>
         </div>
+      </div>
+
+      <!-- Status -->
+      <div style="margin-bottom: 20px;">
         <div id="modalStatusGruppe">
           <label style="display: block; margin-bottom: 6px; color: #333; font-weight: 600; font-size: 0.9em;">
             Status
@@ -23179,6 +23731,37 @@ function vergleicheLeistungen(leistung1, leistung2, disziplin) {
 <div id="medienLightbox" class="medien-lightbox" onclick="closeMedienLightbox(event)">
   <button type="button" class="medien-lightbox-close" onclick="closeMedienLightbox()" aria-label="Schließen">×</button>
   <div id="medienLightboxContent"></div>
+</div>
+
+<!-- Medien-Galerie -->
+<div id="medienGalerieModal" class="medien-galerie-overlay" onclick="if(event.target===this)closeMedienGalerie()">
+  <div class="medien-galerie-modal">
+    <div class="medien-galerie-header">
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Medien-Galerie <span id="medienGalerieCount" class="medien-galerie-count"></span>
+      </h2>
+      <button type="button" class="modal-close-btn" onclick="closeMedienGalerie()" aria-label="Schließen">×</button>
+    </div>
+    <div class="medien-galerie-controls">
+      <select id="medienGalerieSort" onchange="renderMedienGalerie()">
+        <option value="datum_desc">Neueste zuerst</option>
+        <option value="datum_asc">Älteste zuerst</option>
+        <option value="disziplin">Disziplin (A–Z)</option>
+      </select>
+      <select id="medienGalerieFilterDisziplin" onchange="renderMedienGalerie()">
+        <option value="">Alle Disziplinen</option>
+      </select>
+      <select id="medienGalerieFilterTyp" onchange="renderMedienGalerie()">
+        <option value="">Alle Typen</option>
+        <option value="bild">Bilder</option>
+        <option value="video">Videos</option>
+        <option value="link">Links</option>
+      </select>
+    </div>
+    <div id="medienGalerieGrid" class="medien-galerie-grid"></div>
+    <div id="medienGalerieEmpty" class="medien-galerie-empty" style="display:none;">Keine Medien gefunden.</div>
+  </div>
 </div>
 
 <!-- ── Share-Modal: Leistung teilen ────────────────────────────────────
@@ -24822,7 +25405,7 @@ async function ladeWettkaempfe() {
   const { data, error } = await supabaseClient
     .schema('la')
     .from('wettkampf')
-    .select('id, bezeichnung, ort, ort_display, lat, lon, startdatum, enddatum, saison')
+    .select('id, bezeichnung, ort, ort_display, lat, lon, startdatum, enddatum, saison, ms')
     .eq('athlet_id', aid)
     .order('startdatum', { ascending: false });
 
@@ -24903,6 +25486,8 @@ function openWettkampfFormModal(wkId) {
     document.getElementById('wkFormStart').value = wk.startdatum || '';
     document.getElementById('wkFormEnd').value   = wk.enddatum || '';
     document.getElementById('wkFormSaison').value = wk.saison || '';
+    const _wkMsEl = document.getElementById('wkFormMs');
+    if (_wkMsEl) _wkMsEl.value = wk.ms || '';
     // Ort vorbelegen wenn vorhanden
     const ortDisplay = wk.ort_display || wk.ort || '';
     if (ortDisplay) {
@@ -24976,6 +25561,7 @@ async function saveWettkampf(event) {
   const startdatum  = document.getElementById('wkFormStart').value || null;
   const enddatum    = document.getElementById('wkFormEnd').value || null;
   const saison      = document.getElementById('wkFormSaison').value.trim() || null;
+  const ms          = (document.getElementById('wkFormMs')?.value || '').trim() || null;
 
   const ortPayload = _selectedOrt
     ? { ort_display: _selectedOrt.display, lat: _selectedOrt.lat, lon: _selectedOrt.lon }
@@ -24983,7 +25569,7 @@ async function saveWettkampf(event) {
 
   if (_editWettkampfId) {
     // UPDATE bestehenden Wettkampf
-    const updatePayload = { bezeichnung, startdatum, enddatum, saison, ...ortPayload };
+    const updatePayload = { bezeichnung, startdatum, enddatum, saison, ms, ...ortPayload };
     const { error } = await supabaseClient
       .schema('la').from('wettkampf')
       .update(updatePayload)
@@ -25008,8 +25594,8 @@ async function saveWettkampf(event) {
     // INSERT neuer Wettkampf
     const { data, error } = await supabaseClient
       .schema('la').from('wettkampf')
-      .insert([{ athlet_id: aid, bezeichnung, startdatum, enddatum, saison, ...ortPayload }])
-      .select('id, bezeichnung, ort, ort_display, lat, lon, startdatum, enddatum, saison')
+      .insert([{ athlet_id: aid, bezeichnung, startdatum, enddatum, saison, ms, ...ortPayload }])
+      .select('id, bezeichnung, ort, ort_display, lat, lon, startdatum, enddatum, saison, ms')
       .single();
 
     if (error) { alert('Fehler beim Erstellen: ' + error.message); return; }
@@ -25388,7 +25974,7 @@ async function ladeWettkampfMedien(wettkampfId) {
   el.innerHTML = `<div style="font-weight:600;color:#1e3a8a;margin-bottom:10px;font-size:0.9em;">Medien (${data.length})</div>
     <div class="detail-medien-grid" id="wkMedienGrid"></div>`;
   const grid = el.querySelector('#wkMedienGrid');
-  data.forEach(m => grid.appendChild(_baueMedienThumb(m, urlMap[m.pfad], false)));
+  data.forEach(m => grid.appendChild(_baueMedienThumb(m, urlMap[m.pfad], false, m.leistung?.disziplin || '')));
   el.style.display = 'block';
 }
 
@@ -25494,7 +26080,7 @@ function _buildWettkampfShareCard(wk, leistungen, cfg) {
   card.style.cssText = [
     'position:fixed', 'left:-10000px', 'top:0',
     'width:640px',
-    'background:#ffffff', 'color:#1a1a1a',
+    'background:linear-gradient(135deg,#1e3a8a 0%,#1e40af 100%)', 'color:#ffffff',
     'font-family:Inter, system-ui, -apple-system, sans-serif',
     'border-radius:16px', 'box-sizing:border-box',
     'overflow:hidden',
@@ -25513,9 +26099,9 @@ function _buildWettkampfShareCard(wk, leistungen, cfg) {
 
   let html = '';
 
-  // ── Gradient-Header-Bar ───────────────────────────────────
-  html += `<div style="background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 60%,#1e40af 100%);padding:22px 32px 20px;">`;
-  html += `<div style="font-size:10px;font-weight:800;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">TrackUp</div>`;
+  // ── Header direkt auf dem Karten-Gradient ────────────────
+  html += `<div style="padding:26px 32px 18px;">`;
+  html += `<div style="font-size:11px;font-weight:800;letter-spacing:0.26em;text-transform:uppercase;color:rgba(255,255,255,0.9);margin-bottom:12px;">TrackUp</div>`;
   html += `<div style="font-size:27px;font-weight:800;color:#ffffff;line-height:1.18;letter-spacing:-0.02em;">${escapeHtml(wk.bezeichnung || 'Wettkampf')}</div>`;
 
   // Meta-Zeile im Header
@@ -25532,7 +26118,7 @@ function _buildWettkampfShareCard(wk, leistungen, cfg) {
   html += `<div style="padding:24px 32px 28px;">`;
 
   if (fertige.length === 0) {
-    html += `<div style="font-size:13px;color:#94a3b8;font-style:italic;padding:12px 0;">Keine abgeschlossenen Leistungen vorhanden.</div>`;
+    html += `<div style="font-size:13px;color:rgba(255,255,255,0.7);font-style:italic;padding:12px 0;">Keine abgeschlossenen Leistungen vorhanden.</div>`;
   } else {
     const showPlatz = cfg.platzierung;
     const showScore = cfg.score;
@@ -25604,6 +26190,9 @@ function _buildWettkampfShareCard(wk, leistungen, cfg) {
 
   html += `</div>`;  // Ende Tabellenbereich
 
+  // Footer
+  html += `<div style="padding:0 0 16px;text-align:center;font-size:12px;font-weight:600;color:rgba(255,255,255,0.55);">Erstellt mit TrackUp</div>`;
+
   card.innerHTML = html;
   return card;
 }
@@ -25612,7 +26201,7 @@ function _buildWettkampfShareCard(wk, leistungen, cfg) {
 async function _buildWettkampfShareImage(wk, leistungen, cfg) {
   if (typeof html2canvas !== 'function') return null;
   if (!wk) return null;
-  const opts = { backgroundColor: '#ffffff', useCORS: true, scale: 2, logging: false };
+  const opts = { backgroundColor: null, useCORS: true, scale: 2, logging: false };
   const card = _buildWettkampfShareCard(wk, leistungen, cfg);
   document.body.appendChild(card);
   let canvas;
@@ -26270,7 +26859,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   .analyse-nav-item.active {
     background: #f2f6fa !important;
-    color: navy blue !important;
+    color: #1e3a8a !important;
   }
 
   .analyse-content {
@@ -26381,6 +26970,11 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   #kalenderTab .kal-tpl-panel {
+    display: none !important;
+  }
+
+  /* Vorlagen-Toggle ohne Panel sinnlos — ausblenden (verhinderte Overflow) */
+  #kalenderTab .kal-tpl-toggle {
     display: none !important;
   }
 
@@ -26500,6 +27094,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
   .mob-nav-item {
     min-height: unset !important;
+  }
+
+  /* Runde Icon-Buttons behalten ihre Kreisform (kein 44px-Stretch) */
+  .detail-popup-share,
+  .detail-popup-edit,
+  .detail-popup-close,
+  .modal-close-btn,
+  .ort-popup-close-btn,
+  .medien-lightbox-close {
+    min-height: unset !important;
+    width: 40px !important;
+    height: 40px !important;
   }
 
 } /* Ende @media (max-width: 768px) */
@@ -26637,6 +27243,18 @@ document.addEventListener('DOMContentLoaded', function() {
   #dashboardGoalsSection {
     margin-left: 0 !important;
     margin-right: 0 !important;
+  }
+
+  /* Letzter/Nächster Wettkampf: untereinander, kein Overflow */
+  .dash-wk-row {
+    grid-template-columns: 1fr !important;
+  }
+  .dash-wk-item {
+    min-width: 0 !important;
+  }
+  .dash-wk-name,
+  .dash-wk-meta {
+    white-space: normal !important;
   }
 
   /* ══════════════════════════════
@@ -27180,6 +27798,27 @@ body.dark-mode .ort-popup-close-btn:hover {
 .dash-map-popup-header .detail-popup-close:hover {
   border-color: #c7d8f0 !important;
 }
+/* Einstellungen: zusammenhängende Karte statt loser Einzel-Karten */
+#einstellungenTab .wk-detail-card { overflow: hidden; }
+#einstellungenTab .settings-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+#einstellungenTab .settings-card + .settings-card { border-top: 1px solid #e2e8f0 !important; }
+body.dark-mode #einstellungenTab .settings-card + .settings-card { border-top-color: #2d3748 !important; }
+
+/* Detail-Popup: 6-Spalten-Grid (Hero/Wettkampf voll, Platz/AK/Runde je ⅓, Ort/Saison je ½) */
+.detail-info-grid { grid-template-columns: repeat(6, 1fr) !important; }
+@media (max-width: 768px) {
+  .detail-info-grid { grid-template-columns: 1fr 1fr !important; }
+  .detail-hero,
+  .detail-info-item[style*="span 6"],
+  .detail-info-item[style*="span 3"] { grid-column: 1 / -1 !important; }
+  .detail-info-item[style*="span 2"] { grid-column: span 1 !important; }
+}
 </style>
 
 <!-- ============================================================
@@ -27210,6 +27849,7 @@ body.dark-mode .ort-popup-close-btn:hover {
       // body padding-top auf neue Header-Höhe anpassen (Mobile: 52px, Desktop: 60/68px)
       if (window.innerWidth <= 768) {
         document.body.style.setProperty('padding-top', '52px', 'important');
+        window.scrollTo(0, 0);
       }
     };
   }
